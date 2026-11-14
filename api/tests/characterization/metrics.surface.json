@@ -1,0 +1,410 @@
+{
+  "families": [
+    {
+      "documentation": "Total user and system CPU time spent in seconds.",
+      "labelnames": [],
+      "name": "process_cpu_seconds_total",
+      "type": "counter"
+    },
+    {
+      "documentation": "Maximum number of open file descriptors.",
+      "labelnames": [],
+      "name": "process_max_fds",
+      "type": "gauge"
+    },
+    {
+      "documentation": "Number of open file descriptors.",
+      "labelnames": [],
+      "name": "process_open_fds",
+      "type": "gauge"
+    },
+    {
+      "documentation": "Resident memory size in bytes.",
+      "labelnames": [],
+      "name": "process_resident_memory_bytes",
+      "type": "gauge"
+    },
+    {
+      "documentation": "Start time of the process since unix epoch in seconds.",
+      "labelnames": [],
+      "name": "process_start_time_seconds",
+      "type": "gauge"
+    },
+    {
+      "documentation": "Virtual memory size in bytes.",
+      "labelnames": [],
+      "name": "process_virtual_memory_bytes",
+      "type": "gauge"
+    },
+    {
+      "documentation": "HTTP requests currently being served.",
+      "labelnames": [],
+      "name": "trinet_http_inflight_requests",
+      "type": "gauge"
+    },
+    {
+      "buckets": [
+        "0.002",
+        "0.005",
+        "0.01",
+        "0.025",
+        "0.05",
+        "0.1",
+        "0.25",
+        "0.5",
+        "1.0",
+        "2.5",
+        "5.0",
+        "+Inf"
+      ],
+      "documentation": "HTTP request latency by method, route template and model.",
+      "labelnames": [
+        "method",
+        "model",
+        "route"
+      ],
+      "name": "trinet_http_request_duration_seconds",
+      "type": "histogram"
+    },
+    {
+      "documentation": "HTTP requests by method, route template, model and status code.",
+      "labelnames": [
+        "method",
+        "model",
+        "route",
+        "status"
+      ],
+      "name": "trinet_http_requests_total",
+      "type": "counter"
+    },
+    {
+      "buckets": [
+        "0.002",
+        "0.005",
+        "0.01",
+        "0.025",
+        "0.05",
+        "0.1",
+        "0.25",
+        "0.5",
+        "1.0",
+        "2.5",
+        "5.0",
+        "+Inf"
+      ],
+      "documentation": "Time spent inside the model runtime per prediction request.",
+      "labelnames": [
+        "model",
+        "runtime"
+      ],
+      "name": "trinet_inference_duration_seconds",
+      "type": "histogram"
+    },
+    {
+      "documentation": "Inferences currently holding a concurrency slot.",
+      "labelnames": [],
+      "name": "trinet_inflight_inferences",
+      "type": "gauge"
+    },
+    {
+      "documentation": "Loaded models (value 1 = serving, 0 = unavailable).",
+      "labelnames": [
+        "model",
+        "runtime",
+        "status",
+        "version"
+      ],
+      "name": "trinet_model_info",
+      "type": "gauge"
+    },
+    {
+      "documentation": "Predictions per model and predicted class (labels come from the manifest).",
+      "labelnames": [
+        "label",
+        "model"
+      ],
+      "name": "trinet_predicted_class_total",
+      "type": "counter"
+    }
+  ],
+  "label_values": {
+    "http_request_duration_seconds_count": [
+      [
+        "DELETE",
+        "/v1/models",
+        "unknown",
+        1
+      ],
+      [
+        "GET",
+        "/health/live",
+        "unknown",
+        1
+      ],
+      [
+        "GET",
+        "/health/ready",
+        "unknown",
+        1
+      ],
+      [
+        "GET",
+        "/openapi.json",
+        "unknown",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models",
+        "unknown",
+        2
+      ],
+      [
+        "GET",
+        "/v1/models/{name}",
+        "broken-model",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models/{name}",
+        "credit-default-mlp",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models/{name}",
+        "unknown",
+        3
+      ],
+      [
+        "GET",
+        "/v1/models/{name}",
+        "volatility-mlp",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models/{name}/predictions",
+        "credit-default-mlp",
+        1
+      ],
+      [
+        "GET",
+        "unmatched",
+        "unknown",
+        3
+      ],
+      [
+        "OTHER",
+        "/v1/models",
+        "unknown",
+        1
+      ],
+      [
+        "POST",
+        "/v1/models/{name}/predictions",
+        "candlestick-cnn",
+        1
+      ],
+      [
+        "POST",
+        "/v1/models/{name}/predictions",
+        "credit-default-mlp",
+        3
+      ],
+      [
+        "POST",
+        "/v1/models/{name}/predictions",
+        "volatility-mlp",
+        1
+      ]
+    ],
+    "http_requests_total": [
+      [
+        "DELETE",
+        "/v1/models",
+        "unknown",
+        "405",
+        1
+      ],
+      [
+        "GET",
+        "/health/live",
+        "unknown",
+        "200",
+        1
+      ],
+      [
+        "GET",
+        "/health/ready",
+        "unknown",
+        "200",
+        1
+      ],
+      [
+        "GET",
+        "/openapi.json",
+        "unknown",
+        "200",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models",
+        "unknown",
+        "200",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models",
+        "unknown",
+        "401",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models/{name}",
+        "broken-model",
+        "404",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models/{name}",
+        "credit-default-mlp",
+        "200",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models/{name}",
+        "unknown",
+        "404",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models/{name}",
+        "unknown",
+        "422",
+        2
+      ],
+      [
+        "GET",
+        "/v1/models/{name}",
+        "volatility-mlp",
+        "200",
+        1
+      ],
+      [
+        "GET",
+        "/v1/models/{name}/predictions",
+        "credit-default-mlp",
+        "405",
+        1
+      ],
+      [
+        "GET",
+        "unmatched",
+        "unknown",
+        "404",
+        3
+      ],
+      [
+        "OTHER",
+        "/v1/models",
+        "unknown",
+        "405",
+        1
+      ],
+      [
+        "POST",
+        "/v1/models/{name}/predictions",
+        "candlestick-cnn",
+        "200",
+        1
+      ],
+      [
+        "POST",
+        "/v1/models/{name}/predictions",
+        "credit-default-mlp",
+        "200",
+        1
+      ],
+      [
+        "POST",
+        "/v1/models/{name}/predictions",
+        "credit-default-mlp",
+        "415",
+        1
+      ],
+      [
+        "POST",
+        "/v1/models/{name}/predictions",
+        "credit-default-mlp",
+        "422",
+        1
+      ],
+      [
+        "POST",
+        "/v1/models/{name}/predictions",
+        "volatility-mlp",
+        "200",
+        1
+      ]
+    ],
+    "inference_duration_seconds_count": [
+      [
+        "candlestick-cnn",
+        "onnx",
+        1
+      ],
+      [
+        "credit-default-mlp",
+        "onnx",
+        1
+      ],
+      [
+        "volatility-mlp",
+        "onnx",
+        1
+      ]
+    ],
+    "model_info": [
+      [
+        "broken-model",
+        "1.0.0",
+        "unavailable",
+        "none",
+        0
+      ],
+      [
+        "candlestick-cnn",
+        "0.0.0-dummy",
+        "dummy",
+        "onnx",
+        1
+      ],
+      [
+        "credit-default-mlp",
+        "0.0.0-dummy",
+        "dummy",
+        "onnx",
+        1
+      ],
+      [
+        "volatility-mlp",
+        "0.0.0-dummy",
+        "dummy",
+        "onnx",
+        1
+      ]
+    ],
+    "predicted_class_total_per_model": {
+      "candlestick-cnn": 1,
+      "credit-default-mlp": 2
+    }
+  }
+}

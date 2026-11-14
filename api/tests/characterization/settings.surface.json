@@ -1,0 +1,158 @@
+{
+  "fields": {
+    "api_key": {
+      "constraints": {},
+      "default": null,
+      "env": "TRINET_API_KEY",
+      "required": false,
+      "type": "SecretStr | None"
+    },
+    "api_key_file": {
+      "constraints": {},
+      "default": "/run/secrets/api_key",
+      "env": "TRINET_API_KEY_FILE",
+      "required": false,
+      "type": "Path | None"
+    },
+    "artifacts_dir": {
+      "constraints": {},
+      "default": "/app/artifacts",
+      "env": "TRINET_ARTIFACTS_DIR",
+      "required": false,
+      "type": "Path"
+    },
+    "host": {
+      "constraints": {},
+      "default": "0.0.0.0",
+      "env": "TRINET_HOST",
+      "required": false,
+      "type": "str"
+    },
+    "log_level": {
+      "constraints": {},
+      "default": "INFO",
+      "env": "TRINET_LOG_LEVEL",
+      "required": false,
+      "type": "Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']"
+    },
+    "max_batch": {
+      "constraints": {
+        "ge": 1,
+        "le": 10000
+      },
+      "default": 256,
+      "env": "TRINET_MAX_BATCH",
+      "required": false,
+      "type": "int"
+    },
+    "max_concurrency": {
+      "constraints": {
+        "ge": 1,
+        "le": 64
+      },
+      "default": 4,
+      "env": "TRINET_MAX_CONCURRENCY",
+      "required": false,
+      "type": "int"
+    },
+    "max_image_pixels": {
+      "constraints": {
+        "ge": 1
+      },
+      "default": 12000000,
+      "env": "TRINET_MAX_IMAGE_PIXELS",
+      "required": false,
+      "type": "int"
+    },
+    "max_json_bytes": {
+      "constraints": {
+        "ge": 1024
+      },
+      "default": 1048576,
+      "env": "TRINET_MAX_JSON_BYTES",
+      "required": false,
+      "type": "int"
+    },
+    "max_upload_bytes": {
+      "constraints": {
+        "ge": 1024
+      },
+      "default": 6291456,
+      "env": "TRINET_MAX_UPLOAD_BYTES",
+      "required": false,
+      "type": "int"
+    },
+    "metrics_enabled": {
+      "constraints": {},
+      "default": true,
+      "env": "TRINET_METRICS_ENABLED",
+      "required": false,
+      "type": "bool"
+    },
+    "metrics_host": {
+      "constraints": {},
+      "default": "0.0.0.0",
+      "env": "TRINET_METRICS_HOST",
+      "required": false,
+      "type": "str"
+    },
+    "metrics_port": {
+      "constraints": {
+        "ge": 1,
+        "le": 65535
+      },
+      "default": 9100,
+      "env": "TRINET_METRICS_PORT",
+      "required": false,
+      "type": "int"
+    },
+    "ort_intra_op_threads": {
+      "constraints": {
+        "ge": 1,
+        "le": 64
+      },
+      "default": 1,
+      "env": "TRINET_ORT_INTRA_OP_THREADS",
+      "required": false,
+      "type": "int"
+    },
+    "port": {
+      "constraints": {
+        "ge": 1,
+        "le": 65535
+      },
+      "default": 8000,
+      "env": "TRINET_PORT",
+      "required": false,
+      "type": "int"
+    },
+    "queue_timeout_s": {
+      "constraints": {
+        "gt": 0,
+        "le": 60
+      },
+      "default": 2.0,
+      "env": "TRINET_QUEUE_TIMEOUT_S",
+      "required": false,
+      "type": "float"
+    },
+    "rate_limit": {
+      "constraints": {},
+      "default": "60/minute",
+      "env": "TRINET_RATE_LIMIT",
+      "required": false,
+      "type": "str"
+    }
+  },
+  "min_api_key_length": 16,
+  "model_config": {
+    "case_sensitive": false,
+    "env_file": null,
+    "env_ignore_empty": false,
+    "env_nested_delimiter": null,
+    "env_prefix": "TRINET_",
+    "extra": "ignore",
+    "frozen": true,
+    "secrets_dir": null
+  }
+}

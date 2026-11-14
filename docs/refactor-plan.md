@@ -214,6 +214,35 @@ De fora de propósito: Abstract Factory, Observer, Singleton por `__new__`, Stat
 
 ## 11. Testes
 
+### 11.1 Três camadas (pedido do dono: unitário, integração e e2e)
+
+| Camada | O que é | Colaboradores | Onde | Marcador | Comando | CI |
+|---|---|---|---|---|---|---|
+| **unit** | uma classe ou função isolada; sem rede, sem banco real, sem subprocesso | fakes e espiões | `api/tests/unit/` (espelha `core/`, `inference/`, `domains/<domínio>/`) e `property/` (Hypothesis) | `unit` | `make test-unit` | job `test`, com cobertura |
+| **integration** | vários componentes **reais** no mesmo processo: repository + SQLite em arquivo, Alembic, container de DI, app ASGI (`httpx2.AsyncClient` + `ASGITransport` com lifespan), runtimes ONNX com artefatos reais, contrato de runtime e goldens | reais, sem Docker e sem rede | `api/tests/integration/` (absorve os atuais `api/`, `contract/` e `golden/`) | `integration` | `make test-integration` | job `test`, com cobertura |
+| **e2e** | o sistema inteiro **por fora**, por HTTP de verdade: (a) servidor em subprocesso (`python -m trinet_api`, arquivo de banco real num diretório temporário), roda sempre; (b) a imagem Docker endurecida via Testcontainers, pulada sem Docker | tudo real | `api/tests/e2e/server/` e `api/tests/e2e/image/` (hoje `api/tests/integration/test_container.py`) | `e2e` (e `e2e_image` para o Docker) | `make test-e2e` e `make test-e2e-image` | (a) job `test`; (b) job `image` |
+
+- O marcador atual `integration` significa "precisa de Docker"; ele passa a se chamar `e2e_image`, e `make integration` vira
+  `make test-e2e-image` (CI e docs atualizados na R1). Os marcadores são aplicados **por diretório** em um
+  `pytest_collection_modifyitems` do `conftest.py` raiz, então nenhum teste precisa de decorador, e `pytest -m unit`
+  (ou `integration`, ou `e2e`) funciona desde a R1, antes de qualquer arquivo mudar de lugar.
+- A cobertura (gate de 85%, meta 95%) soma `unit` + `integration`. O e2e roda em subprocesso e fica fora da conta.
+- **Obrigações por domínio, a partir da R4** (um domínio só fecha a fase com as três camadas):
+  - *unit*: controller (parse estrito, `loc` cortado, 401 antes de 422), cada sub-service com repository falso (caminho
+    feliz, não encontrado, invariante violada, nenhuma chamada ao repository com entrada inválida, delete idempotente,
+    limites de paginação), facade com espiões (delegação, erro propagado sem mudança, **commit antes do retorno**,
+    uma sessão por chamada).
+  - *integration*: repository SQL com SQLite em arquivo (CRUD, `IntegrityError`, `ORDER BY` explícito, concorrência de
+    escritores); teste de contrato do repository (fake × SQL × em memória); Alembic `upgrade`/`downgrade` e paridade com
+    `create_all`; app ASGI com o container real (autenticação, mapeamento de erros, OpenAPI, Schemathesis, isolamento de dois
+    apps, falha de commit devolve erro e não 201).
+  - *e2e*: ciclo de vida pelo servidor real: `POST predictions` → `X-Prediction-Id` → `GET` → `PATCH outcome` → `DELETE` → 404;
+    **persistência entre reinícios** (para e sobe o servidor com o mesmo arquivo de banco); rotas de histórico ausentes sem
+    chave de admin; `/health/ready` `degraded` com caminho de banco não gravável e inferência funcionando; rate limit;
+    um subconjunto repetido na imagem Docker.
+
+### 11.2 Rede de caracterização e demais regras
+
 - **R0, antes de mover qualquer coisa** (`api/tests/characterization/`, verde na `main` atual, rodada em todo commit
   de movimentação): snapshot do OpenAPI **mais um hash do corpo cru** (o snapshot usa `sort_keys`); tabela de erros (status,
   `code`, URN, cabeçalhos; `validation_error`, `method_not_allowed` e `http_<n>` não têm teste hoje); transcrição HTTP por
@@ -224,7 +253,7 @@ De fora de propósito: Abstract Factory, Observer, Singleton por `__new__`, Stat
 - **Migração dos 600 testes**: 222 intactos desde que `create_app(settings, *, registry=None)` continue público (ganha
   `container=`); 363 só trocam caminho; `unit/test_service.py` é **renomeado**, não reescrito (`PredictionService` →
   `PredictionEngine` num commit isolado). `_build_runtime` continua público em `factory.py` (3 arquivos de teste o usam).
-- **Pirâmide nova**: repository com SQLite real (arquivo `tmp_path` para concorrência); teste de contrato do repository (fake
+- **Pirâmide nova** (detalhe das obrigações em 11.1): repository com SQLite real (arquivo `tmp_path` para concorrência); teste de contrato do repository (fake
   × SQL × em memória); services com repository falso; facade com espiões; controller (parse, `loc` cortado, 401 antes de
   422); router (um por rota); Hypothesis com máquina de estados do repository; teste de isolamento de dois apps;
   Schemathesis com as rotas novas (sem `with TestClient` aninhado, que cria dois lifespans em dois loops).
@@ -235,13 +264,14 @@ De fora de propósito: Abstract Factory, Observer, Singleton por `__new__`, Stat
 ## 12. Fases (um commit cada; gate completo verde em todas)
 
 Gate: `UV_LOCKED=1 make lint typecheck imports deptry free-flows cov schema-check model-cards-check
-check-artifacts-release`, mais a rede de caracterização; fases que tocam o container: `make build smoke integration`.
+check-artifacts-release test-e2e`, mais a rede de caracterização (as camadas `unit`, `integration` e `e2e`); fases que tocam o
+container: `make build smoke test-e2e-image`.
 Cobertura ≥ 95%, nenhum teste apagado. Reversão: `git reset --hard` ao commit anterior (nada foi empurrado).
 
 | Fase | Conteúdo | Pronto quando |
 |---|---|---|
 | **R0** rede | testes de caracterização e lacunas (seção 11) | verde na `main`; falha em ≥ 8 mutações; estável em 3 execuções e com `-n auto` |
-| **R1** mover | `git mv` + reescrita de imports (mapa abaixo), contratos do import-linter, globs do ruff, `FACTORY`, caminhos de teste | `git log --follow` funciona; diff de testes só de linhas de import; `git grep` de caminhos antigos vazio |
+| **R1** mover | `git mv` + reescrita de imports (mapa abaixo), contratos do import-linter, globs do ruff, `FACTORY`, caminhos de teste; taxonomia `unit`/`integration`/`e2e` (marcadores por diretório, alvos `make test-unit`/`test-integration`/`test-e2e`/`test-e2e-image`, CI e docs) | `git log --follow` funciona; diff de testes só de linhas de import; `git grep` de caminhos antigos vazio |
 | **R2** dividir | `entities` → `registry` + `results`; `service` → `engine` + `limiter`; `loading` → + `factory`; `routers` e `schemas` → domínios; `interface/` some | diff do snapshot vazio |
 | **R3** container | `Container` por app, escopo por requisição, `app.state.container`, `dependency-injector` declarado e usado | teste de dois apps; sem `wire(`/`@inject`; deptry verde |
 | **R4** camadas | controller, facade e services **async** para as 5 operações atuais; `models` somente leitura; `health`; contratos por domínio | caracterização idêntica |
