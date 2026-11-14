@@ -1,23 +1,31 @@
-"""Pure-ASGI middlewares: request context (id, security headers, access log, metrics) and
-body-size limiting (enforced *before* any JSON or multipart parsing).
+"""Pure-ASGI middlewares: request context (id, security headers, access log, metrics), rate
+limiting and body-size limiting (enforced *before* any JSON or multipart parsing).
 
-Order, outermost first: ``RequestContextMiddleware`` -> rate limiter -> ``BodyLimitMiddleware``
--> routing. The request-context layer also turns any unhandled exception into a generic
-problem+json 500 so the response still carries the request id and security headers.
+Order, outermost first: ``RequestContextMiddleware`` -> ``RateLimitMiddleware`` ->
+``BodyLimitMiddleware`` -> routing. The request-context layer also turns any unhandled
+exception into a generic problem+json 500 so the response still carries the request id and
+security headers.
 """
 
 from __future__ import annotations
 
+import hashlib
+import math
 import re
 import time
 import uuid
+from collections.abc import Collection, Sequence
 
 import structlog
+from limits import RateLimitItem
+from limits.storage import MemoryStorage
+from limits.strategies import MovingWindowRateLimiter
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from trinet_api.infrastructure.observability import Metrics
 from trinet_api.interface.http.problems import problem_response
+from trinet_api.interface.http.security import API_KEY_HEADER, key_matches
 
 log = structlog.get_logger("trinet_api.http")
 
@@ -165,3 +173,57 @@ class BodyLimitMiddleware:
             scope_path=scope.get("path"),
         )
         await response(scope, receive, send)
+
+
+class RateLimitMiddleware:
+    """Moving-window rate limit (in memory: the service runs as a single process).
+
+    Requests carrying the valid API key share one bucket named after a digest of the key;
+    every other request (missing/wrong key, probes of the internet) shares a bucket per client
+    address, so a flood of bad keys cannot exhaust the budget of the legitimate caller and
+    memory stays bounded. Probe endpoints are exempt. Applied to every route (including 404/405)
+    because it is a plain ASGI layer and does not depend on router internals.
+    """
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        limits: Sequence[RateLimitItem],
+        api_key: bytes,
+        exempt_paths: Collection[str] = (),
+    ) -> None:
+        self.app = app
+        self.limits = tuple(limits)
+        self.exempt_paths = frozenset(exempt_paths)
+        self._key_bucket = "key:" + hashlib.sha256(api_key).hexdigest()[:16]
+        self._api_key = api_key
+        self._strategy = MovingWindowRateLimiter(MemoryStorage())
+
+    def bucket(self, scope: Scope) -> str:
+        if key_matches(Headers(scope=scope).get(API_KEY_HEADER), self._api_key):
+            return self._key_bucket
+        client = scope.get("client")
+        return f"ip:{client[0] if client else 'unknown'}"
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("path") in self.exempt_paths:
+            await self.app(scope, receive, send)
+            return
+        bucket = self.bucket(scope)
+        for item in self.limits:
+            if not self._strategy.hit(item, bucket):
+                reset = self._strategy.get_window_stats(item, bucket).reset_time
+                retry_after = max(1, math.ceil(reset - time.time()))
+                log.warning("rate_limited", bucket=bucket.split(":", 1)[0], limit=str(item))
+                response = problem_response(
+                    429,
+                    "rate_limited",
+                    detail="Rate limit exceeded.",
+                    request_id=scope.get("state", {}).get("request_id"),
+                    scope_path=scope.get("path"),
+                    headers={"Retry-After": str(retry_after)},
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)

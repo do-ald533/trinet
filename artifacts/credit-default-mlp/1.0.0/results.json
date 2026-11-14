@@ -1,0 +1,357 @@
+{
+  "model": "credit-default-mlp",
+  "version": "1.0.0",
+  "status": "candidate",
+  "disclaimer": "Projeto educacional (T2 CIC407). Nao e um modelo de decisao de credito real; custos do limiar sao ilustrativos.",
+  "architecture": {
+    "width": 128,
+    "depth": 2,
+    "dropout": 0.2,
+    "class_weight": false,
+    "features": [
+      "limit_bal",
+      "age",
+      "pay_1",
+      "pay_2",
+      "pay_3",
+      "pay_4",
+      "pay_5",
+      "pay_6",
+      "bill_amt1",
+      "bill_amt2",
+      "bill_amt3",
+      "bill_amt4",
+      "bill_amt5",
+      "bill_amt6",
+      "pay_amt1",
+      "pay_amt2",
+      "pay_amt3",
+      "pay_amt4",
+      "pay_amt5",
+      "pay_amt6",
+      "education=graduate",
+      "education=university",
+      "education=high_school",
+      "education=other",
+      "bill_utilisation"
+    ]
+  },
+  "decision": {
+    "argmax_threshold": 0.5,
+    "cost_threshold_recommended": 0.175,
+    "cost_fn_over_fp": 5.0,
+    "note": "limiar por custo escolhido na validacao (premissa ilustrativa)"
+  },
+  "metrics": {
+    "validation": {
+      "accuracy": 0.8176758682101514,
+      "precision": 0.6526315789473685,
+      "recall": 0.37462235649546827,
+      "f1": 0.4760076775431862,
+      "roc_auc": 0.78116665184442,
+      "pr_auc": 0.5607223142071832,
+      "ks": 0.431251973301536,
+      "brier": 0.13483013212680817
+    },
+    "test": {
+      "accuracy": 0.8201246660730187,
+      "precision": 0.6608695652173913,
+      "recall": 0.3826787512588117,
+      "f1": 0.4846938775510204,
+      "roc_auc": 0.7714156281740115,
+      "pr_auc": 0.538972384427955,
+      "ks": 0.4150597480448305,
+      "brier": 0.13699203729629517
+    }
+  },
+  "notebook_test_table": {
+    "maioria (sempre adimplente)": {
+      "limiar": 0.5,
+      "acurácia": 0.7789403383793411,
+      "precisão (1)": 0.0,
+      "revocação (1)": 0.0,
+      "F1 (1)": 0.0,
+      "ROC-AUC": 0.5,
+      "PR-AUC": 0.22105966162065896,
+      "KS": 0.0,
+      "Brier": 0.22105966162065896,
+      "custo/cliente": 1.1052983081032948
+    },
+    "regressão logística (0,5)": {
+      "limiar": 0.5,
+      "acurácia": 0.808993766696349,
+      "precisão (1)": 0.7002967359050445,
+      "revocação (1)": 0.23766364551863042,
+      "F1 (1)": 0.3548872180451128,
+      "ROC-AUC": 0.7185540279527427,
+      "PR-AUC": 0.48972808908637677,
+      "KS": 0.3685993437342334,
+      "Brier": 0.1462913304567337,
+      "custo/cliente": 0.865093499554764
+    },
+    "regressão logística (custo)": {
+      "limiar": 0.23,
+      "acurácia": 0.7170525378450578,
+      "precisão (1)": 0.40505464480874315,
+      "revocação (1)": 0.5971802618328298,
+      "F1 (1)": 0.4827024827024827,
+      "ROC-AUC": 0.7185540279527427,
+      "PR-AUC": 0.48972808908637677,
+      "KS": 0.3685993437342334,
+      "Brier": 0.1462913304567337,
+      "custo/cliente": 0.6391362422083704
+    },
+    "MLP (0,5)": {
+      "limiar": 0.5,
+      "acurácia": 0.8201246660730187,
+      "precisão (1)": 0.6608695652173913,
+      "revocação (1)": 0.3826787512588117,
+      "F1 (1)": 0.4846938775510204,
+      "ROC-AUC": 0.7714157720793194,
+      "PR-AUC": 0.538972384427955,
+      "KS": 0.4150597480448305,
+      "Brier": 0.13699203729629517,
+      "custo/cliente": 0.7257346393588602
+    },
+    "MLP (limiar por custo)": {
+      "limiar": 0.175,
+      "acurácia": 0.6371326803205699,
+      "precisão (1)": 0.35206688341848585,
+      "revocação (1)": 0.7633434038267876,
+      "F1 (1)": 0.4818817546090273,
+      "ROC-AUC": 0.7714157720793194,
+      "PR-AUC": 0.538972384427955,
+      "KS": 0.4150597480448305,
+      "Brier": 0.13699203729629517,
+      "custo/cliente": 0.5721282279608192
+    }
+  },
+  "extra_gate": {
+    "metric": "pr_auc",
+    "split": "validation",
+    "threshold": 0.55,
+    "value": 0.5607223142071832,
+    "higher_is_better": true
+  },
+  "fairness_by_sex_test": [
+    {
+      "grupo": "masculino",
+      "clientes": 1757,
+      "inadimplência real": 0.23619806488332384,
+      "taxa de aprovação": 0.49516220830961866,
+      "TPR (revocação)": 0.7879518072289157,
+      "FPR": 0.4172876304023845,
+      "PR-AUC": 0.5397895117007129
+    },
+    {
+      "grupo": "feminino",
+      "clientes": 2735,
+      "inadimplência real": 0.2113345521023766,
+      "taxa de aprovação": 0.5371115173674589,
+      "TPR (revocação)": 0.745674740484429,
+      "FPR": 0.38711172925359294,
+      "PR-AUC": 0.5396858606290339
+    }
+  ],
+  "ablation_mean_over_3_seeds": [
+    {
+      "class_weight": false,
+      "depth": 2,
+      "width": 128,
+      "val_pr_auc": 0.5563,
+      "val_roc_auc": 0.77846,
+      "val_f1_05": 0.46723,
+      "val_f1_best": 0.54081,
+      "params": 11714.0,
+      "epochs": 33.0
+    },
+    {
+      "class_weight": true,
+      "depth": 1,
+      "width": 16,
+      "val_pr_auc": 0.53629,
+      "val_roc_auc": 0.77049,
+      "val_f1_05": 0.53626,
+      "val_f1_best": 0.54149,
+      "params": 450.0,
+      "epochs": 40.0
+    },
+    {
+      "class_weight": true,
+      "depth": 1,
+      "width": 32,
+      "val_pr_auc": 0.53661,
+      "val_roc_auc": 0.77331,
+      "val_f1_05": 0.5383,
+      "val_f1_best": 0.5476,
+      "params": 898.0,
+      "epochs": 40.0
+    },
+    {
+      "class_weight": true,
+      "depth": 1,
+      "width": 64,
+      "val_pr_auc": 0.54152,
+      "val_roc_auc": 0.77762,
+      "val_f1_05": 0.53597,
+      "val_f1_best": 0.54772,
+      "params": 1794.0,
+      "epochs": 39.0
+    },
+    {
+      "class_weight": true,
+      "depth": 1,
+      "width": 128,
+      "val_pr_auc": 0.54305,
+      "val_roc_auc": 0.77726,
+      "val_f1_05": 0.53689,
+      "val_f1_best": 0.54719,
+      "params": 3586.0,
+      "epochs": 27.33333
+    },
+    {
+      "class_weight": true,
+      "depth": 2,
+      "width": 16,
+      "val_pr_auc": 0.53847,
+      "val_roc_auc": 0.77291,
+      "val_f1_05": 0.53546,
+      "val_f1_best": 0.54051,
+      "params": 570.0,
+      "epochs": 40.0
+    },
+    {
+      "class_weight": true,
+      "depth": 2,
+      "width": 32,
+      "val_pr_auc": 0.5406,
+      "val_roc_auc": 0.77601,
+      "val_f1_05": 0.53863,
+      "val_f1_best": 0.54224,
+      "params": 1394.0,
+      "epochs": 38.0
+    },
+    {
+      "class_weight": true,
+      "depth": 2,
+      "width": 64,
+      "val_pr_auc": 0.54558,
+      "val_roc_auc": 0.77863,
+      "val_f1_05": 0.53636,
+      "val_f1_best": 0.54449,
+      "params": 3810.0,
+      "epochs": 31.66667
+    },
+    {
+      "class_weight": true,
+      "depth": 2,
+      "width": 128,
+      "val_pr_auc": 0.54844,
+      "val_roc_auc": 0.77835,
+      "val_f1_05": 0.53367,
+      "val_f1_best": 0.54424,
+      "params": 11714.0,
+      "epochs": 28.0
+    },
+    {
+      "class_weight": true,
+      "depth": 3,
+      "width": 16,
+      "val_pr_auc": 0.53636,
+      "val_roc_auc": 0.76806,
+      "val_f1_05": 0.52731,
+      "val_f1_best": 0.53592,
+      "params": 642.0,
+      "epochs": 36.33333
+    },
+    {
+      "class_weight": true,
+      "depth": 3,
+      "width": 32,
+      "val_pr_auc": 0.54233,
+      "val_roc_auc": 0.77585,
+      "val_f1_05": 0.53525,
+      "val_f1_best": 0.54025,
+      "params": 1514.0,
+      "epochs": 34.33333
+    },
+    {
+      "class_weight": true,
+      "depth": 3,
+      "width": 64,
+      "val_pr_auc": 0.54499,
+      "val_roc_auc": 0.77696,
+      "val_f1_05": 0.53774,
+      "val_f1_best": 0.54325,
+      "params": 4306.0,
+      "epochs": 33.33333
+    },
+    {
+      "class_weight": true,
+      "depth": 3,
+      "width": 128,
+      "val_pr_auc": 0.54891,
+      "val_roc_auc": 0.77855,
+      "val_f1_05": 0.53578,
+      "val_f1_best": 0.54547,
+      "params": 13730.0,
+      "epochs": 26.66667
+    }
+  ],
+  "onnx": {
+    "method": "keras.export(format='onnx') [tf2onnx]",
+    "keras_export_error": null,
+    "opset": 17,
+    "ir_version": 8,
+    "input": {
+      "name": "features",
+      "shape": [
+        null,
+        25
+      ],
+      "type": "tensor(float)"
+    },
+    "output": {
+      "name": "Identity:0",
+      "shape": [
+        null,
+        2
+      ],
+      "type": "tensor(float)"
+    },
+    "ops": [
+      "Add",
+      "MatMul",
+      "Mul",
+      "Relu",
+      "Softmax"
+    ],
+    "bytes": 49903
+  },
+  "parity_max_abs_diff": {
+    "clone": 1.7881393432617188e-07,
+    "numpy": 2.003573150721749e-07,
+    "onnx": 1.7881393432617188e-07
+  },
+  "manifest_vs_notebook_features_max_abs_diff": 0.0,
+  "golden_cases": 220,
+  "timings_seconds": {
+    "train": 10.751229286193848,
+    "export": 1.0512356758117676,
+    "notebook_part_10": 210.66774249076843
+  },
+  "versions": {
+    "python": "3.13.13",
+    "tensorflow": "2.21.0",
+    "keras": "3.15.1",
+    "onnx": "1.23.2",
+    "onnxruntime": "1.31.1",
+    "numpy": "2.5.4"
+  },
+  "data": {
+    "csv_sha256": "45bcf4df62ff2e237a74eb155cabfb4bbbc171219a0637daef44fdad07503dd0",
+    "train": 20961,
+    "val": 4492,
+    "test": 4492
+  }
+}

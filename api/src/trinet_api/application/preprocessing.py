@@ -247,6 +247,8 @@ def decode_image(data: bytes, spec: ImageInput, *, max_pixels: int = 16_777_216)
                 rgb = image.convert("RGB")
     except InvalidInput:
         raise
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise _invalid_image(f"image has more than {max_pixels} pixels") from None
     except Exception:  # Pillow raises many unrelated types for corrupt files
         raise _invalid_image("the file is not a valid, complete image") from None
     size = (spec.width, spec.height)

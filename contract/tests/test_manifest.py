@@ -16,7 +16,7 @@ SHA = "0" * 64
 
 def tabular_manifest() -> dict[str, Any]:
     return {
-        "name": "housing-mlp",
+        "name": "volatility-mlp",
         "version": "1.0.0",
         "status": "candidate",
         "task": "regression",
@@ -69,7 +69,7 @@ def tabular_manifest() -> dict[str, Any]:
             "higher_is_better": False,
         },
         "training": {
-            "dataset": "California Housing Prices",
+            "dataset": "S&P 500 (camnugent/sandp500)",
             "data_sha256": SHA,
             "seed": 42,
             "python": "3.13",
@@ -81,7 +81,7 @@ def tabular_manifest() -> dict[str, Any]:
 
 def image_manifest() -> dict[str, Any]:
     return {
-        "name": "intel-cnn",
+        "name": "candlestick-cnn",
         "version": "1.0.0",
         "status": "dummy",
         "task": "image_classification",
@@ -147,7 +147,7 @@ def test_image_manifest_rejects_numpy_runtime() -> None:
 def test_load_manifest_and_sha(tmp_path: Path) -> None:
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(tabular_manifest()), encoding="utf-8")
-    assert load_manifest(path).name == "housing-mlp"
+    assert load_manifest(path).name == "volatility-mlp"
     assert len(sha256_file(path)) == 64
 
 

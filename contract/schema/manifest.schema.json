@@ -126,6 +126,20 @@
       "title": "DenseLayer",
       "type": "object"
     },
+    "ExpLayer": {
+      "additionalProperties": false,
+      "description": "``exp(x)`` (Keras ``Activation(\"exponential\")``): log-space targets back to natural units.",
+      "properties": {
+        "op": {
+          "const": "exp",
+          "default": "exp",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "ExpLayer",
+      "type": "object"
+    },
     "GoldenRef": {
       "additionalProperties": false,
       "properties": {
@@ -362,6 +376,7 @@
               "mapping": {
                 "denormalize": "#/$defs/DenormalizeLayer",
                 "dense": "#/$defs/DenseLayer",
+                "exp": "#/$defs/ExpLayer",
                 "normalize": "#/$defs/NormalizeLayer"
               },
               "propertyName": "op"
@@ -375,6 +390,9 @@
               },
               {
                 "$ref": "#/$defs/DenormalizeLayer"
+              },
+              {
+                "$ref": "#/$defs/ExpLayer"
               }
             ]
           },

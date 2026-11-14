@@ -9,6 +9,8 @@ from collections.abc import Callable
 import numpy as np
 from numpy.typing import NDArray
 
+from trinet_api.infrastructure.runtimes import check_batch
+
 type Fn = Callable[[NDArray[np.float32]], NDArray[np.float32]]
 
 
@@ -53,11 +55,13 @@ class FakeRuntime:
         logits = batch.reshape(batch.shape[0], -1) @ self._weights
         if self.width == 1:
             return np.asarray(logits, dtype=np.float32)
-        return softmax_rows(logits / max(1.0, float(np.abs(logits).max())))
+        scale = np.maximum(
+            1.0, np.abs(logits).max(axis=1, keepdims=True)
+        )  # per row: rows stay independent
+        return softmax_rows(logits / scale)
 
     def predict(self, batch: NDArray[np.float32]) -> NDArray[np.float32]:
-        if batch.dtype != np.float32 or tuple(batch.shape[1:]) != self.trailing:
-            raise ValueError("bad batch")
+        check_batch(batch, self.trailing)  # same input contract as the real adapters
         with self._lock:
             self.calls.append(batch.shape[0])
         if self.gate is not None:

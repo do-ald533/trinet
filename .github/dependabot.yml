@@ -2,12 +2,9 @@
 # `cooldown` delays every new release by N days, so a freshly published (possibly hijacked)
 # version is never adopted immediately - the lesson of the 2026 trivy-action tag rewrite.
 # Notes:
-# - The DHI base images are ARG defaults / repository variables (DHI_BASE_IMAGE, DHI_BUILD_IMAGE),
-#   which Dependabot does not parse: bump them by hand with `make dhi-digests`. The pinned
-#   python:3.13-slim-trixie fallback and the uv image ARE tracked (literal FROM lines).
-# - Pull requests opened by Dependabot cannot read normal Actions secrets. To let their `image`
-#   job build on DHI, store the same read-only dhi.io token as *Dependabot* secrets too
-#   (DHI_USERNAME / DHI_TOKEN); otherwise those runs use the slim fallback (see .github/CICD.md).
+# - The pinned python:3.13-slim-trixie base and the uv image are literal FROM lines, so Dependabot
+#   keeps their digests fresh. No workflow reads a secret other than the built-in GITHUB_TOKEN, so
+#   Dependabot pull requests run exactly the same jobs as any other pull request.
 version: 2
 
 updates:
@@ -54,7 +51,7 @@ updates:
     commit-message:
       prefix: "chore(notebook-deps)"
 
-  # --- Container: Dockerfile base images (python slim fallback, uv) and compose (Prometheus) ----
+  # --- Container: Dockerfile base images (python slim, uv) and compose (Prometheus) ----
   - package-ecosystem: docker
     directory: /deploy
     schedule:

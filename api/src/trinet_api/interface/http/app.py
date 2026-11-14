@@ -7,42 +7,48 @@ and ``/health/ready`` flips once every model has been verified and warmed up.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
+from limits import parse_many
 from PIL import Image
 from prometheus_client import start_http_server
-from slowapi import Limiter
-from slowapi.middleware import SlowAPIASGIMiddleware
 from starlette.concurrency import run_in_threadpool
 
 from trinet_api.application.service import ConcurrencyLimiter, PredictionService
 from trinet_api.domain.entities import ModelBundle, ModelRegistry
 from trinet_api.infrastructure.loading import RuntimeOptions, load_registry
 from trinet_api.infrastructure.observability import Metrics, configure_logging
-from trinet_api.interface.http.middleware import BodyLimitMiddleware, RequestContextMiddleware
+from trinet_api.interface.http.middleware import (
+    BodyLimitMiddleware,
+    RateLimitMiddleware,
+    RequestContextMiddleware,
+)
 from trinet_api.interface.http.problems import PROBLEM_MEDIA_TYPE, register_problem_handlers
 from trinet_api.interface.http.routers import (
+    HEALTH_LIVE_PATH,
+    HEALTH_READY_PATH,
     JSON,
-    health_live,
-    health_ready,
     health_router,
     models_router,
 )
-from trinet_api.interface.http.security import API_KEY_HEADER, key_matches
 from trinet_api.settings import Settings
 
 logger = logging.getLogger(__name__)
 
 DESCRIPTION = (
-    "Inference API for the TriNet models (Dry Bean, California Housing, Intel scenes). "
-    "Behaviour is driven by each model's `manifest.json`; errors follow RFC 9457."
+    "Inference API for the TriNet financial-market models: credit default (binary "
+    "classification), 5-day realised volatility (regression) and candlestick chart regimes "
+    "(image classification). Behaviour is driven by each model's `manifest.json`; errors "
+    "follow RFC 9457.\n\n"
+    "**Educational use only.** The models are demonstrations of an ML deployment pipeline. "
+    "Nothing returned by this API is investment, credit or financial advice, and it must not "
+    "be used to make real financial decisions."
 )
 
 
@@ -51,14 +57,6 @@ def _package_version() -> str:
         return version("trinet-api")
     except PackageNotFoundError:  # pragma: no cover - running from a source tree
         return "0.0.0"
-
-
-def rate_limit_key(request: Request) -> str:
-    """Bucket per valid API key; everything else shares a per-IP bucket (bounded memory)."""
-    expected: bytes = request.app.state.api_key_bytes
-    if key_matches(request.headers.get(API_KEY_HEADER), expected):
-        return "key:" + hashlib.sha256(expected).hexdigest()[:16]
-    return f"ip:{request.client.host if request.client else 'unknown'}"
 
 
 def _model_rows(registry: ModelRegistry) -> list[tuple[str, str, str, str, bool]]:
@@ -104,13 +102,6 @@ def create_app(
     configure_logging(settings.log_level)
     api_key = settings.resolve_api_key()  # fail closed at start-up
     metrics = Metrics()
-    limiter = Limiter(
-        key_func=rate_limit_key,
-        application_limits=[settings.rate_limit],
-        strategy="moving-window",
-        storage_uri="memory://",
-        headers_enabled=False,
-    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -162,7 +153,6 @@ def create_app(
     app.state.settings = settings
     app.state.api_key_bytes = api_key.get_secret_value().encode("utf-8")
     app.state.metrics = metrics
-    app.state.limiter = limiter
 
     # Innermost first: the last middleware added is the outermost.
     app.add_middleware(
@@ -170,13 +160,16 @@ def create_app(
         max_json_bytes=settings.max_json_bytes,
         max_upload_bytes=settings.max_upload_bytes,
     )
-    app.add_middleware(SlowAPIASGIMiddleware)
+    app.add_middleware(
+        RateLimitMiddleware,
+        limits=parse_many(settings.rate_limit),
+        api_key=app.state.api_key_bytes,
+        exempt_paths=(HEALTH_LIVE_PATH, HEALTH_READY_PATH),
+    )
     app.add_middleware(RequestContextMiddleware, metrics=metrics)
     register_problem_handlers(app)
 
     app.include_router(health_router)
     app.include_router(models_router)
-    limiter.exempt(health_live)  # type: ignore[no-untyped-call]
-    limiter.exempt(health_ready)  # type: ignore[no-untyped-call]
     app.openapi = lambda: _build_openapi(app, settings)  # type: ignore[method-assign]
     return app

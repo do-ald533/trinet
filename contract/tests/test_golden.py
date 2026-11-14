@@ -15,7 +15,7 @@ def test_tabular_golden_roundtrip(tmp_path: Path) -> None:
         json.dumps(
             {
                 "kind": "tabular",
-                "model": "housing-mlp",
+                "model": "volatility-mlp",
                 "version": "1.0.0",
                 "cases": [
                     {
@@ -39,7 +39,7 @@ def test_image_golden_rejects_path_traversal(tmp_path: Path) -> None:
     path = tmp_path / "golden.json"
     payload = {
         "kind": "image",
-        "model": "intel-cnn",
+        "model": "candlestick-cnn",
         "version": "1.0.0",
         "cases": [{"file": "../etc/passwd", "output": [0.5, 0.5]}],
     }

@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0",
+  "name": "candlestick-cnn",
+  "version": "1.0.0",
+  "status": "candidate",
+  "task": "image_classification",
+  "description": "Regime de volatilidade dos proximos 5 pregoes (baixa/media/alta, tercis do treino) a partir de um grafico OHLC + media movel + volume de 20 pregoes de acoes do S&P 500, renderizado em 64x64x3. Uso educacional; nao e recomendacao de investimento.",
+  "created_at": "2026-11-14T13:05:02Z",
+  "git_sha": "273c6f769a9220b1d14c04e21738968263387af3",
+  "input": {
+    "kind": "image",
+    "height": 64,
+    "width": 64,
+    "channels": 3,
+    "resample": "bilinear",
+    "value_range": [
+      0.0,
+      255.0
+    ],
+    "max_bytes": 262144,
+    "formats": [
+      "PNG"
+    ]
+  },
+  "output": {
+    "kind": "classification",
+    "labels": [
+      "baixa",
+      "media",
+      "alta"
+    ]
+  },
+  "inputs": [
+    {
+      "name": "chart",
+      "dtype": "float32",
+      "shape": [
+        null,
+        64,
+        64,
+        3
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "Identity:0",
+      "dtype": "float32",
+      "shape": [
+        null,
+        3
+      ]
+    }
+  ],
+  "runtimes": [
+    {
+      "kind": "onnx",
+      "file": "model.onnx",
+      "sha256": "76db5861d692fafc3f300ccae17aacfd95a45512a5641ad718488a8e9b80509e",
+      "opset": 17
+    }
+  ],
+  "metrics": {
+    "validation": {
+      "accuracy": 0.520476758480072,
+      "loss": 1.0031731128692627
+    },
+    "test": {
+      "accuracy": 0.5249415432579891,
+      "macro_f1": 0.44533834398913735
+    }
+  },
+  "quality_gate": {
+    "metric": "accuracy",
+    "split": "validation",
+    "threshold": 0.49,
+    "value": 0.5204767726161369,
+    "higher_is_better": true
+  },
+  "serving_skew": {
+    "samples": 12830,
+    "max_abs_diff": 2.384185791015625e-07,
+    "top1_agreement": 1.0,
+    "accuracy_delta_pp": 0.0
+  },
+  "training": {
+    "dataset": "S&P 500 5 anos (Kaggle camnugent/sandp500), janelas OHLCV de 20 pregoes renderizadas em 64x64x3",
+    "data_sha256": "6aea253cd19de60b568143991aaf1fa482456565c389205658d236e595e716cf",
+    "seed": 42,
+    "python": "3.13.13",
+    "tensorflow": "2.21.0",
+    "keras": "3.15.1",
+    "hardware": "11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz | 8 threads | 33 GB RAM | GPU: nao (CPU)"
+  },
+  "golden": {
+    "file": "golden.json",
+    "sha256": "ce63ebb7ea401943e0daa45946eb37e49b1ef027809c22c020e8173e56c6c2e8"
+  }
+}

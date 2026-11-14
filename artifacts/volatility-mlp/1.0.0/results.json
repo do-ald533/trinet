@@ -1,0 +1,459 @@
+{
+  "model": "volatility-mlp",
+  "version": "1.0.0",
+  "status": "candidate",
+  "disclaimer": "Projeto educacional (T2 CIC407). Nao e recomendacao de investimento.",
+  "architecture": {
+    "width": 32,
+    "depth": 1,
+    "loss": "mse",
+    "huber_delta_z": 1.098,
+    "target_mu_ln": -1.6999622161210115,
+    "target_sigma_ln": 0.5631523086074486,
+    "features": [
+      "ret_1d",
+      "ret_2d",
+      "ret_3d",
+      "ret_4d",
+      "ret_5d",
+      "rv_5",
+      "rv_10",
+      "rv_20",
+      "rv_60",
+      "pk_5",
+      "pk_20",
+      "range_5",
+      "volume_ratio",
+      "log_dollar_volume",
+      "gap",
+      "mom_20",
+      "mom_60",
+      "drawdown_60",
+      "mkt_rv_20",
+      "dow=mon",
+      "dow=tue",
+      "dow=wed",
+      "dow=thu",
+      "dow=fri",
+      "rv_ratio"
+    ]
+  },
+  "metrics": {
+    "validation": {
+      "rmse": 0.12858891306535794,
+      "mae": 0.07631471365145373,
+      "mae_over_mean": 0.3955072858120951,
+      "rmse_over_mean": 0.6664226275458006,
+      "qlike": 0.7996118802257418,
+      "r2_log": 0.20943749228861075,
+      "bias": -0.014965607460061538
+    },
+    "test": {
+      "rmse": 0.13321432756158516,
+      "mae": 0.07407369540278452,
+      "mae_over_mean": 0.38764347241828745,
+      "rmse_over_mean": 0.6971390347280939,
+      "qlike": 0.8706643354387426,
+      "r2_log": 0.2330663306039391,
+      "bias": -0.023078263805011247
+    }
+  },
+  "notebook_test_table": {
+    "MLP": {
+      "RMSE": 0.13321432513195275,
+      "MAE": 0.07407369578414219,
+      "MAE/média": 0.3876434744140136,
+      "RMSE/média": 0.6971390220133085,
+      "QLIKE": 0.8706641912224933,
+      "R² (log)": 0.2330663264398346,
+      "viés": -0.02307825020043296
+    },
+    "HAR linear": {
+      "RMSE": 0.13543883116171887,
+      "MAE": 0.07661465965344658,
+      "MAE/média": 0.4009408811686054,
+      "RMSE/média": 0.7087803372886571,
+      "QLIKE": 0.8835699862563847,
+      "R² (log)": 0.1856847611128547,
+      "viés": -0.020059650705928855
+    },
+    "persistência (rv_5)": {
+      "RMSE": 0.17482723718102422,
+      "MAE": 0.10217691695781375,
+      "MAE/média": 0.5347136345115164,
+      "RMSE/média": 0.9149082805392234,
+      "QLIKE": 1.9230043140353066,
+      "R² (log)": -0.34197199870931283,
+      "viés": -0.0036774156809198707
+    },
+    "média do treino": {
+      "RMSE": 0.14586209252086574,
+      "MAE": 0.09852226480339325,
+      "MAE/média": 0.5155880590435038,
+      "RMSE/média": 0.7633274907040807,
+      "QLIKE": 0.8377956529608512,
+      "R² (log)": -0.26271197047415273,
+      "viés": 0.0239848617534952
+    }
+  },
+  "baselines_test": {
+    "HAR linear": {
+      "RMSE": 0.13543883116171887,
+      "MAE": 0.07661465965344658,
+      "MAE/média": 0.4009408811686054,
+      "RMSE/média": 0.7087803372886571,
+      "QLIKE": 0.8835699862563847,
+      "R² (log)": 0.1856847611128547,
+      "viés": -0.020059650705928855
+    },
+    "persistência (rv_5)": {
+      "RMSE": 0.17482723718102422,
+      "MAE": 0.10217691695781375,
+      "MAE/média": 0.5347136345115164,
+      "RMSE/média": 0.9149082805392234,
+      "QLIKE": 1.9230043140353066,
+      "R² (log)": -0.34197199870931283,
+      "viés": -0.0036774156809198707
+    },
+    "média do treino": {
+      "RMSE": 0.14586209252086574,
+      "MAE": 0.09852226480339325,
+      "MAE/média": 0.5155880590435038,
+      "RMSE/média": 0.7633274907040807,
+      "QLIKE": 0.8377956529608512,
+      "R² (log)": -0.26271197047415273,
+      "viés": 0.0239848617534952
+    }
+  },
+  "extra_gate": {
+    "metric": "qlike",
+    "split": "validation",
+    "threshold": 0.8200000000000001,
+    "value": 0.7996118802257418,
+    "higher_is_better": false
+  },
+  "error_by_month_test": {
+    "2017-05": {
+      "amostras": 5000,
+      "y médio": 0.16383575595317337,
+      "RMSE MLP": 0.09911687117743104,
+      "RMSE HAR linear": 0.1031197428766384,
+      "RMSE persistência (rv_5)": 0.15326977607570627,
+      "RMSE média do treino": 0.12228350827446707,
+      "MAE MLP": 0.058432441418206735,
+      "viés MLP": -0.0014629252716705367
+    },
+    "2017-06": {
+      "amostras": 11003,
+      "y médio": 0.1851922213706845,
+      "RMSE MLP": 0.09849344652501876,
+      "RMSE HAR linear": 0.1021517988266171,
+      "RMSE persistência (rv_5)": 0.12971504707411144,
+      "RMSE média do treino": 0.11883791417366263,
+      "MAE MLP": 0.060176110237103786,
+      "viés MLP": -0.018925891495716603
+    },
+    "2017-07": {
+      "amostras": 10020,
+      "y médio": 0.18625797578023656,
+      "RMSE MLP": 0.1432939912077365,
+      "RMSE HAR linear": 0.14527077518732961,
+      "RMSE persistência (rv_5)": 0.18545760535725178,
+      "RMSE média do treino": 0.15499704569432166,
+      "MAE MLP": 0.07866824665851084,
+      "viés MLP": -0.022821243922752844
+    },
+    "2017-08": {
+      "amostras": 11523,
+      "y médio": 0.18045075301460453,
+      "RMSE MLP": 0.12136171672498017,
+      "RMSE HAR linear": 0.12362992813660481,
+      "RMSE persistência (rv_5)": 0.17339657259253488,
+      "RMSE média do treino": 0.1370449031228869,
+      "MAE MLP": 0.06676682554023149,
+      "viés MLP": -0.013828406533642888
+    },
+    "2017-09": {
+      "amostras": 10022,
+      "y médio": 0.18582783889482002,
+      "RMSE MLP": 0.16850149288172295,
+      "RMSE HAR linear": 0.1693305671938946,
+      "RMSE persistência (rv_5)": 0.22026159636575735,
+      "RMSE média do treino": 0.17890848168443227,
+      "MAE MLP": 0.07331400594681109,
+      "viés MLP": -0.022004828536142336
+    },
+    "2017-10": {
+      "amostras": 11054,
+      "y médio": 0.1857587676064696,
+      "RMSE MLP": 0.14600739974027918,
+      "RMSE HAR linear": 0.14948083127439815,
+      "RMSE persistência (rv_5)": 0.17837269447563367,
+      "RMSE média do treino": 0.158491240828385,
+      "MAE MLP": 0.07919481977352602,
+      "viés MLP": -0.02479194625727618
+    },
+    "2017-11": {
+      "amostras": 10545,
+      "y médio": 0.20440946584893932,
+      "RMSE MLP": 0.14244439884347343,
+      "RMSE HAR linear": 0.14584633984475798,
+      "RMSE persistência (rv_5)": 0.19937189064360591,
+      "RMSE média do treino": 0.15483618644627486,
+      "MAE MLP": 0.08213731279518849,
+      "viés MLP": -0.02832107928472186
+    },
+    "2017-12": {
+      "amostras": 10060,
+      "y médio": 0.1741196936374533,
+      "RMSE MLP": 0.09396644114351597,
+      "RMSE HAR linear": 0.09576136286696268,
+      "RMSE persistência (rv_5)": 0.13315072796726032,
+      "RMSE média do treino": 0.11656286376780982,
+      "MAE MLP": 0.06518692134237425,
+      "viés MLP": 0.0012134362504250128
+    },
+    "2018-01": {
+      "amostras": 10565,
+      "y médio": 0.23972794866092256,
+      "RMSE MLP": 0.1504498850347101,
+      "RMSE HAR linear": 0.150920402510623,
+      "RMSE persistência (rv_5)": 0.1727643140382958,
+      "RMSE média do treino": 0.1491887887939204,
+      "MAE MLP": 0.09533785935602447,
+      "viés MLP": -0.06508767260039165
+    }
+  },
+  "error_by_regime_test": {
+    "baixa": {
+      "amostras": 39456,
+      "y médio": 0.10017887639234369,
+      "RMSE MLP": 0.06045435391305069,
+      "MAE MLP": 0.04796976323504408,
+      "viés MLP": 0.04438679191557484,
+      "RMSE HAR linear": 0.06706714318761449,
+      "MAE HAR linear": 0.052939052582906924,
+      "viés HAR linear": 0.04995396280560834
+    },
+    "media": {
+      "amostras": 27802,
+      "y médio": 0.18103308145124844,
+      "RMSE MLP": 0.05042485917607475,
+      "MAE MLP": 0.03977875817701914,
+      "viés MLP": -0.0117220760542092,
+      "RMSE HAR linear": 0.05122835931304669,
+      "MAE HAR linear": 0.03917892767278316,
+      "viés HAR linear": -0.00835938009194779
+    },
+    "alta": {
+      "amostras": 22534,
+      "y médio": 0.3626679679536317,
+      "RMSE MLP": 0.24733977401147578,
+      "MAE MLP": 0.16209289424027296,
+      "viés MLP": -0.15521746451402652,
+      "RMSE HAR linear": 0.2489598718579588,
+      "MAE HAR linear": 0.16425702111175922,
+      "viés HAR linear": -0.1570858359513852
+    }
+  },
+  "tercile_edges": [
+    0.14407703857207588,
+    0.22880985657794298
+  ],
+  "tercile_accuracy_test": {
+    "mlp": 0.5052677298645759,
+    "har": 0.4803991446899501,
+    "persistence": 0.4601968995010691,
+    "majority": 0.43941553813257306
+  },
+  "split": {
+    "train_start": "2013-02-08",
+    "train_end": "2016-08-08",
+    "val_start": "2016-08-16",
+    "val_end": "2017-05-09",
+    "test_start": "2017-05-17",
+    "test_end": "2018-01-31",
+    "new_start": "2018-02-01",
+    "new_end": "2018-02-07"
+  },
+  "sizes": {
+    "train": 398738,
+    "val": 91612,
+    "test": 89792
+  },
+  "ablation_mean_over_3_seeds": [
+    {
+      "loss": "huber",
+      "depth": 1,
+      "width": 32,
+      "val_QLIKE": 0.8064,
+      "val_RMSE": 0.12889,
+      "val_MAE": 0.07696,
+      "val_R2log": 0.19789,
+      "params": 865.0,
+      "epochs": 25.33333
+    },
+    {
+      "loss": "huber",
+      "depth": 1,
+      "width": 64,
+      "val_QLIKE": 0.81007,
+      "val_RMSE": 0.12894,
+      "val_MAE": 0.07694,
+      "val_R2log": 0.19899,
+      "params": 1729.0,
+      "epochs": 21.0
+    },
+    {
+      "loss": "huber",
+      "depth": 1,
+      "width": 128,
+      "val_QLIKE": 0.80705,
+      "val_RMSE": 0.12883,
+      "val_MAE": 0.0768,
+      "val_R2log": 0.20183,
+      "params": 3457.0,
+      "epochs": 19.0
+    },
+    {
+      "loss": "huber",
+      "depth": 2,
+      "width": 32,
+      "val_QLIKE": 0.81273,
+      "val_RMSE": 0.1291,
+      "val_MAE": 0.07709,
+      "val_R2log": 0.19704,
+      "params": 1377.0,
+      "epochs": 24.33333
+    },
+    {
+      "loss": "huber",
+      "depth": 2,
+      "width": 64,
+      "val_QLIKE": 0.82145,
+      "val_RMSE": 0.1294,
+      "val_MAE": 0.07714,
+      "val_R2log": 0.19331,
+      "params": 3777.0,
+      "epochs": 10.66667
+    },
+    {
+      "loss": "huber",
+      "depth": 2,
+      "width": 128,
+      "val_QLIKE": 0.82237,
+      "val_RMSE": 0.12933,
+      "val_MAE": 0.07694,
+      "val_R2log": 0.19902,
+      "params": 11649.0,
+      "epochs": 8.33333
+    },
+    {
+      "loss": "huber",
+      "depth": 3,
+      "width": 32,
+      "val_QLIKE": 0.81574,
+      "val_RMSE": 0.12951,
+      "val_MAE": 0.0773,
+      "val_R2log": 0.19259,
+      "params": 1505.0,
+      "epochs": 16.0
+    },
+    {
+      "loss": "huber",
+      "depth": 3,
+      "width": 64,
+      "val_QLIKE": 0.81517,
+      "val_RMSE": 0.12944,
+      "val_MAE": 0.07711,
+      "val_R2log": 0.19451,
+      "params": 4289.0,
+      "epochs": 9.0
+    },
+    {
+      "loss": "huber",
+      "depth": 3,
+      "width": 128,
+      "val_QLIKE": 0.83051,
+      "val_RMSE": 0.12946,
+      "val_MAE": 0.07697,
+      "val_R2log": 0.19737,
+      "params": 13697.0,
+      "epochs": 8.33333
+    }
+  ],
+  "onnx": {
+    "method": "keras.export(format='onnx') [tf2onnx]",
+    "keras_export_error": null,
+    "opset": 17,
+    "ir_version": 8,
+    "input": {
+      "name": "features",
+      "shape": [
+        null,
+        25
+      ],
+      "type": "tensor(float)"
+    },
+    "output": {
+      "name": "Identity:0",
+      "shape": [
+        null,
+        1
+      ],
+      "type": "tensor(float)"
+    },
+    "ops": [
+      "Add",
+      "Exp",
+      "MatMul",
+      "Mul",
+      "Relu"
+    ],
+    "bytes": 6323
+  },
+  "parity_max_abs_diff": {
+    "clone": 4.172325134277344e-07,
+    "numpy": 3.1227055341531695e-07,
+    "onnx": 3.5762786865234375e-07
+  },
+  "golden_tolerance": {
+    "output_atol": 0.0001,
+    "note": "unidades naturais (fracao a.a.); a API soma rtol=1e-5"
+  },
+  "manifest_vs_notebook_features_max_abs_diff": 0.0,
+  "golden_cases": 250,
+  "timings_seconds": {
+    "train": 9.884351968765259,
+    "export": 0.8251857757568359,
+    "notebook_part_20": 179.22185254096985
+  },
+  "versions": {
+    "python": "3.13.13",
+    "tensorflow": "2.21.0",
+    "keras": "3.15.1",
+    "onnx": "1.23.2",
+    "onnxruntime": "1.31.1",
+    "numpy": "2.5.4"
+  },
+  "data": {
+    "sp500_rows": 619020,
+    "cleaning": {
+      "linhas_brutas": 619040,
+      "tickers_brutos": 505,
+      "nan_ohlc": 11,
+      "volume_zero": 4,
+      "high_menor_que_low": 1,
+      "close_fora_de_low_high": 9,
+      "linhas_removidas": 20,
+      "linhas_limpas": 619020,
+      "tickers_limpos": 505,
+      "pregoes": 1259
+    },
+    "samples": {
+      "train": 398738,
+      "val": 91612,
+      "test": 89792
+    }
+  }
+}

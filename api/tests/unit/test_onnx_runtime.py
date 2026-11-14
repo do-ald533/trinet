@@ -185,11 +185,13 @@ def test_non_float_graphs_and_unparseable_graphs_are_rejected() -> None:
 
 
 def test_session_is_configured_for_a_single_cpu_thread(artifacts_root: Path) -> None:
-    onnx_bytes = (artifacts_root / "drybean-mlp" / dummy.DUMMY_VERSION / "model.onnx").read_bytes()
+    onnx_bytes = (
+        artifacts_root / "credit-default-mlp" / dummy.DUMMY_VERSION / "model.onnx"
+    ).read_bytes()
     runtime = OnnxRuntime(
         onnx_bytes,
-        TensorSpec(name="inputs", shape=(None, 16)),
-        TensorSpec(name="output_0", shape=(None, 7)),
+        TensorSpec(name="inputs", shape=(None, 25)),
+        TensorSpec(name="output_0", shape=(None, 2)),
     )
     options = runtime._session.get_session_options()
     assert (options.intra_op_num_threads, options.inter_op_num_threads) == (1, 1)

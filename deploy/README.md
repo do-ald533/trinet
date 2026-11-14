@@ -6,7 +6,6 @@ driven by the manifests). `deploy/compose.yaml` runs it with production-grade ha
 ## Quick start (local)
 
 ```bash
-docker login dhi.io            # once; free Docker Hardened Images account (see "Base images")
 make up                        # build + secrets/api_key + start on http://127.0.0.1:8000
 curl -s localhost:8000/health/ready
 curl -s -H "X-API-Key: $(cat secrets/api_key)" localhost:8000/v1/models
@@ -14,7 +13,7 @@ make observability             # also starts Prometheus on http://127.0.0.1:9090
 make down
 ```
 
-No Docker Hardened Images account yet? Use the pinned fallback: `make up BASE=slim`.
+No account, token or login is needed anywhere: the base image is the public, digest-pinned `python:3.13-slim-trixie` ([ADR 0012](../docs/adr/0012-fluxos-gratuitos-e-sem-credenciais.md)).
 
 `make help` lists every target. `.env.example` documents the knobs (`TRINET_API_PORT`, `TRINET_RATE_LIMIT`, ...);
 copy it to `.env` to override. The API settings themselves are `TRINET_*` variables (see `api/src/trinet_api/settings.py`).
@@ -23,14 +22,14 @@ copy it to `.env` to override. The API settings themselves are `TRINET_*` variab
 
 | Control | Where |
 |---|---|
-| Non-root, numeric uid:gid 65532 | Dockerfile `USER` (the DHI `nonroot` user) |
+| Non-root, numeric uid:gid 65532 | Dockerfile `USER` (numeric, because the slim base has no such account) |
 | Read-only root filesystem, tmpfs `/tmp` (64 MiB) | compose `read_only`, `tmpfs` |
 | All capabilities dropped, `no-new-privileges` | compose `cap_drop`, `security_opt` |
 | 2 CPUs, 1 GiB, 256 pids | compose `cpus`, `mem_limit`, `pids_limit` |
 | Port published on loopback only | `127.0.0.1:8000:8000` (put a TLS reverse proxy in front for remote access) |
 | API key from a file, never an env var | Docker secret mounted at `/run/secrets/api_key` |
 | Healthcheck without curl/shell | `python -m trinet_api.healthcheck` |
-| No shell, no package manager, no pip in the runtime | DHI runtime image (the slim fallback strips pip) |
+| No pip in the runtime | the Dockerfile `slim` stage removes pip (the base still ships a shell and apt) |
 
 ## Secrets
 
@@ -42,13 +41,14 @@ Never put the key in `.env`, in an image build argument or in the compose file.
 
 ## Base images
 
-* Default: `dhi.io/python:3.13` (runtime, Debian 13, Python 3.13, nonroot) and `dhi.io/python:3.13-dev`
-  (build stage only). `dhi.io` requires `docker login dhi.io` (a free Docker account is enough).
-* Pin by digest, which Dependabot cannot do for build arguments: run `make dhi-digests` and put the output
-  into the repository variables `DHI_BASE_IMAGE` / `DHI_BUILD_IMAGE` (CI) and `.env` (local).
-* Fallback: `--build-arg BASE_IMAGE=slim --build-arg BUILD_IMAGE=slim` (or `BASE=slim`) resolves to the digest-pinned
-  `python:3.13-slim-trixie` stage inside the Dockerfile. It runs as 65532 too, but ships a shell and apt, so treat it
-  as a stopgap rather than the production base.
+* Default and only base used by CI/CD: the `slim` stage of `deploy/Dockerfile`, the official
+  `python:3.13-slim-trixie` pinned by digest (Debian 13, Python 3.13). `BASE_IMAGE=slim` / `BUILD_IMAGE=slim` resolve to
+  that stage without a registry round trip, and Dependabot keeps the digest fresh because it is a literal `FROM`.
+  It runs as 65532, with pip removed and Debian security updates applied at build time. It still ships a shell and apt,
+  so it is not distroless.
+* Optional, local only, never used by a workflow: Docker Hardened Images (`dhi.io/python:3.13` and
+  `dhi.io/python:3.13-dev`; no shell in the runtime). They need `docker login dhi.io` with a free Docker account.
+  Build with `make build BASE=dhi`, or print digest-pinned references for `.env` with `make dhi-digests`.
 * Optional LiteRT runtime: `make build UV_SYNC_ARGS="--extra litert"`.
 
 ## Build context caveat (Docker Desktop on Linux)

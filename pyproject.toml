@@ -34,7 +34,6 @@ dev = [
     "httpx2>=2.16.0", # the TestClient backend Starlette 1.10 prefers (plain httpx is deprecated there)
     "onnx>=1.21.0", # dev only (tools/make_dummy_artifacts.py); CVE-2026-34447 is fixed in 1.21.0
     "schemathesis>=4.33.1",
-    "inline-snapshot>=0.36.2",
     "testcontainers>=4.15.0",
 ]
 
@@ -70,7 +69,13 @@ exclude = ["^notebook/"]
 
 # Third-party packages that ship no type information.
 [[tool.mypy.overrides]]
-module = ["onnxruntime", "onnxruntime.*", "ai_edge_litert", "ai_edge_litert.*", "slowapi", "slowapi.*"]
+module = [
+    "onnxruntime",
+    "onnxruntime.*",
+    "ai_edge_litert",
+    "ai_edge_litert.*",
+    "flatbuffers",
+]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]
@@ -90,6 +95,7 @@ xfail_strict = true
 
 [tool.coverage.run]
 branch = true
+relative_files = true
 source = ["trinet_contract", "trinet_api"]
 
 [tool.coverage.report]
@@ -109,7 +115,6 @@ root_packages = [
     "onnxruntime",
     "structlog",
     "prometheus_client",
-    "slowapi",
     "limits",
     "uvicorn",
     "PIL",
@@ -142,7 +147,6 @@ forbidden_modules = [
     "onnxruntime",
     "structlog",
     "prometheus_client",
-    "slowapi",
     "limits",
     "uvicorn",
     "PIL",
@@ -161,7 +165,6 @@ forbidden_modules = [
     "onnxruntime",
     "structlog",
     "prometheus_client",
-    "slowapi",
     "limits",
     "uvicorn",
 ]

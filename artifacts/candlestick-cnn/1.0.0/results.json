@@ -1,0 +1,251 @@
+{
+  "model": "candlestick-cnn",
+  "version": "1.0.0",
+  "status": "candidate",
+  "metrics": {
+    "validation": {
+      "accuracy": 0.520476758480072,
+      "loss": 1.0031731128692627
+    },
+    "test": {
+      "accuracy": 0.5249415432579891,
+      "macro_f1": 0.44533834398913735
+    }
+  },
+  "quality_gate": {
+    "metric": "accuracy",
+    "split": "validation",
+    "threshold": 0.49,
+    "value": 0.5204767726161369,
+    "higher_is_better": true
+  },
+  "serving_skew": {
+    "samples": 12830,
+    "max_abs_diff": 2.384185791015625e-07,
+    "top1_agreement": 1.0,
+    "accuracy_delta_pp": 0.0
+  },
+  "baselines_acuracia_teste": {
+    "chance": 0.3333333333333333,
+    "classe_majoritaria_treino_no_teste": 0.43842556508183944,
+    "har_logistico_mesmas_imagens": 0.5140296180826188,
+    "rede2_har": 0.4803991446899501,
+    "rede2_mlp": 0.5052677298645759
+  },
+  "direction_sanity": {
+    "val": 0.5269712805747986,
+    "test": 0.5761496424674988,
+    "test_always_prior_class": 0.5761496492595479,
+    "test_share_up": 0.5761496492595479
+  },
+  "ablation": [
+    {
+      "configuração": "base",
+      "parâmetros": 137587,
+      "val acc (média)": 0.5094743371,
+      "val acc (desvio)": 0.0043896209,
+      "val loss (média)": 1.0021642248,
+      "s/época": 8.8290598492,
+      "cabe no orçamento": true
+    },
+    {
+      "configuração": "dropout 0,25",
+      "parâmetros": 137587,
+      "val acc (média)": 0.4851263265,
+      "val acc (desvio)": 0.0400525312,
+      "val loss (média)": 1.0271113912,
+      "s/época": 8.9581896762,
+      "cabe no orçamento": true
+    },
+    {
+      "configuração": "augmentation (jitter ±3 linhas)",
+      "parâmetros": 137587,
+      "val acc (média)": 0.5119193196,
+      "val acc (desvio)": 0.0035614197,
+      "val loss (média)": 1.0047140718,
+      "s/época": 9.1499378383,
+      "cabe no orçamento": true
+    },
+    {
+      "configuração": "mais rasa (2 blocos)",
+      "parâmetros": 263891,
+      "val acc (média)": 0.5072330832,
+      "val acc (desvio)": 0.0048380939,
+      "val loss (média)": 1.0149125059,
+      "s/época": 8.063955466,
+      "cabe no orçamento": true
+    },
+    {
+      "configuração": "mais larga (16/32/64, extra)",
+      "parâmetros": 286435,
+      "val acc (média)": 0.516172568,
+      "val acc (desvio)": 0.0044918699,
+      "val loss (média)": 1.0269301335,
+      "s/época": 18.1728958587,
+      "cabe no orçamento": false
+    }
+  ],
+  "lr_sweep": [
+    {
+      "taxa de aprendizado": 0.0003,
+      "val acc (média)": 0.5076660713,
+      "val acc (desvio)": 0.0025266596,
+      "val loss (média)": 0.9939635396,
+      "melhor época (média)": 7.3333333333
+    },
+    {
+      "taxa de aprendizado": 0.001,
+      "val acc (média)": 0.5094743371,
+      "val acc (desvio)": 0.0043896209,
+      "val loss (média)": 1.0021642248,
+      "melhor época (média)": 8.0
+    },
+    {
+      "taxa de aprendizado": 0.003,
+      "val acc (média)": 0.4781988561,
+      "val acc (desvio)": 0.0351536327,
+      "val loss (média)": 1.0401594043,
+      "melhor época (média)": 5.6666666667
+    }
+  ],
+  "pilot_escala_vertical": [
+    {
+      "escala vertical": "por janela (min/max)",
+      "val acc (melhor época)": 0.4153333306,
+      "desvio": 0.0146666765,
+      "janelas recortadas": 0.0,
+      "px por 1% de preço": null
+    },
+    {
+      "escala vertical": "fixa, 0,15",
+      "val acc (melhor época)": 0.4773333222,
+      "desvio": 0.0343333334,
+      "janelas recortadas": 0.152,
+      "px por 1% de preço": 4.2
+    },
+    {
+      "escala vertical": "fixa, 0,20",
+      "val acc (melhor época)": 0.4543333352,
+      "desvio": 0.0183333457,
+      "janelas recortadas": 0.0611666667,
+      "px por 1% de preço": 3.15
+    },
+    {
+      "escala vertical": "fixa, 0,30",
+      "val acc (melhor época)": 0.4363333285,
+      "desvio": 0.0036666691,
+      "janelas recortadas": 0.0151666667,
+      "px por 1% de preço": 2.1
+    },
+    {
+      "escala vertical": "fixa, 0,45",
+      "val acc (melhor época)": 0.4344999939,
+      "desvio": 0.0034999996,
+      "janelas recortadas": 0.0015,
+      "px por 1% de preço": 1.4
+    }
+  ],
+  "confusion_matrix_test": [
+    [
+      4899,
+      396,
+      330
+    ],
+    [
+      2799,
+      543,
+      669
+    ],
+    [
+      1410,
+      491,
+      1293
+    ]
+  ],
+  "dataset": {
+    "stride": 7,
+    "imagens_treino": 56956,
+    "imagens_validacao": 13088,
+    "imagens_teste": 12830,
+    "tercis_y_treino": [
+      0.14407703857207588,
+      0.22880985657794298
+    ],
+    "classes": [
+      "baixa",
+      "media",
+      "alta"
+    ]
+  },
+  "architecture": {
+    "config": {
+      "filters": [
+        8,
+        16,
+        32
+      ],
+      "dense": 64,
+      "dropout": 0.5,
+      "jitter": 0
+    },
+    "parametros": 137587
+  },
+  "timings_s": {
+    "epoca_media": 34.93142846226692,
+    "primeira_epoca": 35.49353837966919,
+    "renderizacao_imagens": 11.64980673789978,
+    "melhor_epoca": 4
+  },
+  "export": {
+    "rota": "tf2onnx via Model.export(format='onnx', opset_version=17)",
+    "onnx": {
+      "opset": 17,
+      "ir_version": 8,
+      "ops": [
+        "Add",
+        "Cast",
+        "Concat",
+        "Conv",
+        "Gather",
+        "MatMul",
+        "MaxPool",
+        "Mul",
+        "Relu",
+        "Reshape",
+        "Shape",
+        "Slice",
+        "Softmax",
+        "Transpose"
+      ],
+      "bytes": 557561
+    },
+    "clone_vs_treinado_max_abs_diff": 0.0,
+    "golden_casos": 20,
+    "golden_png_maior_bytes": 594,
+    "golden_acuracia_sintetica_vs_regime_do_gerador": 0.65,
+    "rasterizacao_igual_a_tools_render_chart": {
+      "identical": true,
+      "checks": {
+        "render_windows[fixed,0.3]": true,
+        "render_windows[fixed,0.18]": true,
+        "render_windows[window,0.3]": true,
+        "render_chart": true,
+        "lote == unitario": true,
+        "png_bytes": true,
+        "png decodificado == array": true
+      },
+      "cli_matches": true
+    }
+  },
+  "versions": {
+    "python": "3.13.13",
+    "tensorflow": "2.21.0",
+    "keras": "3.15.1",
+    "numpy": "2.5.4",
+    "onnx": "1.23.2",
+    "onnxruntime": "1.31.1",
+    "tf2onnx": "1.17.0"
+  },
+  "hardware": "11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz | 8 threads | 33 GB RAM | GPU: nao (CPU)",
+  "export_seconds": 31.18375563621521
+}

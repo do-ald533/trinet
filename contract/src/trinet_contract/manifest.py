@@ -258,7 +258,15 @@ class DenormalizeLayer(_Strict):
     key: Identifier
 
 
-MlpLayer = Annotated[NormalizeLayer | DenseLayer | DenormalizeLayer, Field(discriminator="op")]
+class ExpLayer(_Strict):
+    """``exp(x)`` (Keras ``Activation("exponential")``): log-space targets back to natural units."""
+
+    op: Literal["exp"] = "exp"
+
+
+MlpLayer = Annotated[
+    NormalizeLayer | DenseLayer | DenormalizeLayer | ExpLayer, Field(discriminator="op")
+]
 
 
 class NumpyMlpRuntimeSpec(_Strict):

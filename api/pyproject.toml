@@ -17,7 +17,6 @@ dependencies = [
     "python-multipart>=0.0.33",
     "structlog>=26.1.0",
     "prometheus-client>=0.26.0",
-    "slowapi>=0.1.10",
     "limits>=3.13.0",
 ]
 

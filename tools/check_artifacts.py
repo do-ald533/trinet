@@ -314,7 +314,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0] if __doc__ else None)
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="artifacts directory")
     parser.add_argument("--release", action="store_true", help="also apply the release gate")
-    parser.add_argument("--min-models", type=int, default=1, help="minimum number of models")
+    parser.add_argument(
+        "--min-models",
+        type=int,
+        default=None,
+        help="minimum number of models (default: 3 with --release, otherwise 1)",
+    )
     parser.add_argument("--max-file-mib", type=float, default=DEFAULT_MAX_FILE_MIB)
     parser.add_argument("--max-total-mib", type=float, default=DEFAULT_MAX_TOTAL_MIB)
     return parser.parse_args(argv)
@@ -325,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
     report = run(
         args.root,
         release=args.release,
-        min_models=args.min_models,
+        min_models=args.min_models if args.min_models is not None else (3 if args.release else 1),
         max_file=int(args.max_file_mib * MIB),
         max_total=int(args.max_total_mib * MIB),
     )

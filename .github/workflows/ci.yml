@@ -80,8 +80,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # make targets: ruff check + format, mypy --strict, import-linter, deptry
-        check: [lint, typecheck, imports, deptry]
+        # make targets: ruff check + format, mypy --strict, import-linter, deptry, free-flows (ADR 0012)
+        check: [lint, typecheck, imports, deptry, free-flows]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,14 +122,6 @@ jobs:
         run: make install
       - name: pytest (unit, api, golden, property, schemathesis) with coverage gate
         run: make cov
-      - name: Upload coverage.xml
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-xml
-          path: coverage.xml
-          if-no-files-found: warn
-          retention-days: 7
 
   contract-drift:
     name: contract schema drift
@@ -328,37 +320,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Choose the base image
-        id: base
-        env:
-          DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
-          DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
-          DHI_BASE_IMAGE: ${{ vars.DHI_BASE_IMAGE }}
-          DHI_BUILD_IMAGE: ${{ vars.DHI_BUILD_IMAGE }}
-        run: |
-          set -euo pipefail
-          if [ -n "$DHI_USERNAME" ] && [ -n "$DHI_TOKEN" ]; then
-            {
-              echo "flavor=dhi"
-              echo "base=${DHI_BASE_IMAGE:-dhi.io/python:3.13}"
-              echo "build=${DHI_BUILD_IMAGE:-dhi.io/python:3.13-dev}"
-            } >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice title=Base image::DHI credentials are not available (fork, Dependabot or not configured): using the pinned python:3.13-slim-trixie fallback"
-            {
-              echo "flavor=slim"
-              echo "base=slim"
-              echo "build=slim"
-            } >> "$GITHUB_OUTPUT"
-          fi
-      - name: Log in to dhi.io
-        if: ${{ steps.base.outputs.flavor == 'dhi' }}
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: dhi.io
-          username: ${{ secrets.DHI_USERNAME }}
-          password: ${{ secrets.DHI_TOKEN }}
-
       - name: Set up Docker Buildx (BuildKit pinned by digest)
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
@@ -372,15 +333,15 @@ jobs:
           push: false
           tags: ${{ env.IMAGE_TAG }}
           build-args: |
-            BASE_IMAGE=${{ steps.base.outputs.base }}
-            BUILD_IMAGE=${{ steps.base.outputs.build }}
+            BASE_IMAGE=slim
+            BUILD_IMAGE=slim
             IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
             IMAGE_REVISION=${{ github.event.pull_request.head.sha || github.sha }}
             IMAGE_VERSION=ci
           provenance: false
           sbom: false
-          cache-from: type=gha,scope=ci-image-${{ steps.base.outputs.flavor }}
-          cache-to: type=gha,mode=max,scope=ci-image-${{ steps.base.outputs.flavor }},ignore-error=true
+          cache-from: type=gha,scope=ci-image
+          cache-to: type=gha,mode=max,scope=ci-image,ignore-error=true
 
       - name: Boot smoke test (hardened run, readiness, auth)
         run: .github/scripts/smoke-image.sh "$IMAGE_TAG"
@@ -406,36 +367,6 @@ jobs:
       - name: Report non-blocking mode
         if: ${{ steps.trivy.outcome == 'failure' }}
         run: echo "::warning title=SECURITY_GATE=warn::Trivy found fixable HIGH/CRITICAL vulnerabilities in the image (not blocking)"
-
-  # ------------------------------------------------------------------ advisory (not in ci-gate)
-  sonar:
-    name: SonarQube Cloud (advisory)
-    needs: test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    continue-on-error: true
-    permissions:
-      contents: read # checkout
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-    steps:
-      - name: Checkout (full history for blame/new-code detection)
-        if: ${{ env.SONAR_TOKEN != '' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Download coverage.xml
-        if: ${{ env.SONAR_TOKEN != '' }}
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: coverage-xml
-      - name: SonarQube scan
-        if: ${{ env.SONAR_TOKEN != '' }}
-        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
-      - name: Skipped
-        if: ${{ env.SONAR_TOKEN == '' }}
-        run: echo "::notice title=Sonar::SONAR_TOKEN is not available (fork/Dependabot or not configured); advisory analysis skipped"
 
   # ------------------------------------------------------------------ the single required check
   ci-gate:

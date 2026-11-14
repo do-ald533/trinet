@@ -1,5 +1,8 @@
 """Generate DUMMY artifacts for the three TriNet models (real schemas, fake weights).
 
+Models: ``credit-default-mlp`` (binary), ``volatility-mlp`` (regression, ends in ``exp``) and
+``candlestick-cnn`` (64x64 PNG charts). Educational project: nothing here is financial advice.
+
 They let the API, the image and the CI run end to end before the notebook exports the real
 models. Everything is deterministic (seeded RNGs, fixed timestamps, reproducible ``.npz`` and
 ONNX bytes), so re-running the script does not churn the committed files.
@@ -10,7 +13,7 @@ Usage::
     uv run python tools/make_dummy_artifacts.py --out /tmp/x --version 0.0.1-dummy
 
 The functions are also imported by the API test-suite to build artifacts in temporary
-directories (``build_all``, ``build_drybean``, ``build_housing``, ``build_intel``).
+directories (``build_all``, ``build_credit``, ``build_volatility``, ``build_candlestick``).
 The ``onnx`` package is a dev-only dependency (never imported by ``api/src``).
 """
 
@@ -38,6 +41,7 @@ from trinet_contract import (
     ClassificationOutput,
     DenormalizeLayer,
     DenseLayer,
+    ExpLayer,
     GoldenRef,
     GoldenTolerance,
     ImageGolden,
@@ -68,7 +72,7 @@ DUMMY_VERSION = "0.0.0-dummy"
 OPSET = 17
 IR_VERSION = 8  # the IR version that goes with opset 17
 CREATED_AT = datetime(2026, 11, 10, tzinfo=UTC)
-MODELS = ("drybean-mlp", "housing-mlp", "intel-cnn")
+MODELS = ("credit-default-mlp", "volatility-mlp", "candlestick-cnn")
 EPS = np.float32(1e-7)  # Keras Normalization epsilon
 
 type F32 = NDArray[np.float32]
@@ -113,21 +117,24 @@ def _std(variance: F32) -> F32:
 
 def mlp_reference(x: F32, layers: Sequence[MlpLayer], arrays: Arrays) -> F32:
     """Independent NumPy implementation of the manifest layers (float32)."""
-    out = x.astype(np.float32)
+    out: NDArray[Any] = x.astype(np.float32)
     for layer in layers:
-        if isinstance(layer, NormalizeLayer):
-            out = (out - arrays[f"{layer.key}.mean"]) / _std(arrays[f"{layer.key}.variance"])
-        elif isinstance(layer, DenormalizeLayer):
-            out = out * _std(arrays[f"{layer.key}.variance"]) + arrays[f"{layer.key}.mean"]
-        else:
-            out = out @ arrays[f"{layer.key}.kernel"] + arrays[f"{layer.key}.bias"]
-            if layer.activation == "relu":
-                out = np.maximum(out, np.float32(0))
-            elif layer.activation == "softmax":
-                e = np.exp(out - out.max(axis=-1, keepdims=True))
-                out = e / e.sum(axis=-1, keepdims=True)
+        match layer:
+            case NormalizeLayer(key=key):
+                out = (out - arrays[f"{key}.mean"]) / _std(arrays[f"{key}.variance"])
+            case DenormalizeLayer(key=key):
+                out = out * _std(arrays[f"{key}.variance"]) + arrays[f"{key}.mean"]
+            case ExpLayer():
+                out = np.exp(out)
+            case DenseLayer(key=key, activation=activation):
+                out = out @ arrays[f"{key}.kernel"] + arrays[f"{key}.bias"]
+                if activation == "relu":
+                    out = np.maximum(out, np.float32(0))
+                elif activation == "softmax":
+                    e = np.exp(out - out.max(axis=-1, keepdims=True))
+                    out = e / e.sum(axis=-1, keepdims=True)
         out = out.astype(np.float32)
-    return out
+    return np.asarray(out, dtype=np.float32)
 
 
 def _dense(rng: np.random.Generator, key: str, n_in: int, n_out: int, gain: float) -> Arrays:
@@ -136,7 +143,9 @@ def _dense(rng: np.random.Generator, key: str, n_in: int, n_out: int, gain: floa
     return {f"{key}.kernel": kernel.astype(np.float32), f"{key}.bias": bias.astype(np.float32)}
 
 
-def _stats(key: str, mean: Sequence[float], variance: Sequence[float]) -> Arrays:
+def _stats(
+    key: str, mean: Sequence[float] | NDArray[Any], variance: Sequence[float] | NDArray[Any]
+) -> Arrays:
     return {
         f"{key}.mean": np.asarray(mean, dtype=np.float32),
         f"{key}.variance": np.asarray(variance, dtype=np.float32),
@@ -155,26 +164,29 @@ def mlp_onnx(layers: Sequence[MlpLayer], arrays: Arrays, n_in: int, n_out: int) 
 
     for i, layer in enumerate(layers):
         out = f"t{i}"
-        if isinstance(layer, NormalizeLayer | DenormalizeLayer):
-            mean = const(f"{layer.key}.mean", arrays[f"{layer.key}.mean"])
-            std = const(f"{layer.key}.std", _std(arrays[f"{layer.key}.variance"]))
-            if isinstance(layer, NormalizeLayer):
-                nodes.append(helper.make_node("Sub", [current, mean], [f"{out}a"]))
-                nodes.append(helper.make_node("Div", [f"{out}a", std], [out]))
-            else:
-                nodes.append(helper.make_node("Mul", [current, std], [f"{out}a"]))
-                nodes.append(helper.make_node("Add", [f"{out}a", mean], [out]))
-        else:
-            kernel = const(f"{layer.key}.kernel", arrays[f"{layer.key}.kernel"])
-            bias = const(f"{layer.key}.bias", arrays[f"{layer.key}.bias"])
-            nodes.append(helper.make_node("MatMul", [current, kernel], [f"{out}a"]))
-            nodes.append(helper.make_node("Add", [f"{out}a", bias], [f"{out}b"]))
-            if layer.activation == "relu":
-                nodes.append(helper.make_node("Relu", [f"{out}b"], [out]))
-            elif layer.activation == "softmax":
-                nodes.append(helper.make_node("Softmax", [f"{out}b"], [out], axis=-1))
-            else:
-                nodes.append(helper.make_node("Identity", [f"{out}b"], [out]))
+        match layer:
+            case NormalizeLayer(key=key) | DenormalizeLayer(key=key):
+                mean = const(f"{key}.mean", arrays[f"{key}.mean"])
+                std = const(f"{key}.std", _std(arrays[f"{key}.variance"]))
+                if isinstance(layer, NormalizeLayer):
+                    nodes.append(helper.make_node("Sub", [current, mean], [f"{out}a"]))
+                    nodes.append(helper.make_node("Div", [f"{out}a", std], [out]))
+                else:
+                    nodes.append(helper.make_node("Mul", [current, std], [f"{out}a"]))
+                    nodes.append(helper.make_node("Add", [f"{out}a", mean], [out]))
+            case ExpLayer():
+                nodes.append(helper.make_node("Exp", [current], [out]))
+            case DenseLayer(key=key, activation=activation):
+                kernel = const(f"{key}.kernel", arrays[f"{key}.kernel"])
+                bias = const(f"{key}.bias", arrays[f"{key}.bias"])
+                nodes.append(helper.make_node("MatMul", [current, kernel], [f"{out}a"]))
+                nodes.append(helper.make_node("Add", [f"{out}a", bias], [f"{out}b"]))
+                if activation == "relu":
+                    nodes.append(helper.make_node("Relu", [f"{out}b"], [out]))
+                elif activation == "softmax":
+                    nodes.append(helper.make_node("Softmax", [f"{out}b"], [out], axis=-1))
+                else:
+                    nodes.append(helper.make_node("Identity", [f"{out}b"], [out]))
         current = out
     nodes.append(helper.make_node("Identity", [current], ["output_0"]))
     return _serialize(nodes, inits, [("inputs", ["batch", n_in])], ("output_0", ["batch", n_out]))
@@ -372,166 +384,177 @@ def _rmse_quality(
     return metrics, gate
 
 
-# ---- Dry Bean
+# ---- Default of credit card clients (binary classification)
 
-DRYBEAN_LABELS = ("SEKER", "BARBUNYA", "BOMBAY", "CALI", "HOROZ", "SIRA", "DERMASON")
-# name: (mean, std, minimum, maximum) - roughly the UCI statistics, only used to look plausible.
-DRYBEAN_FIELDS: dict[str, tuple[float, float, float, float | None]] = {
-    "Area": (53048.0, 29324.0, 0.0, None),
-    "Perimeter": (855.0, 214.0, 0.0, None),
-    "MajorAxisLength": (320.0, 86.0, 0.0, None),
-    "MinorAxisLength": (202.0, 45.0, 0.0, None),
-    "AspectRation": (1.58, 0.25, 0.0, None),
-    "Eccentricity": (0.75, 0.09, 0.0, 1.0),
-    "ConvexArea": (53768.0, 29775.0, 0.0, None),
-    "EquivDiameter": (253.0, 59.0, 0.0, None),
-    "Extent": (0.75, 0.05, 0.0, 1.0),
-    "Solidity": (0.987, 0.005, 0.0, 1.0),
-    "roundness": (0.873, 0.059, 0.0, 1.0),
-    "Compactness": (0.80, 0.062, 0.0, 1.0),
-    "ShapeFactor1": (0.0066, 0.0011, 0.0, 1.0),
-    "ShapeFactor2": (0.0017, 0.0006, 0.0, 1.0),
-    "ShapeFactor3": (0.64, 0.099, 0.0, 1.0),
-    "ShapeFactor4": (0.995, 0.0043, 0.0, 1.0),
+CREDIT_LABELS = ("no_default", "default")
+EDUCATION = ("graduate", "university", "high_school", "other")
+CREDIT_MONTHS = range(1, 7)
+# Numeric raw fields, in request/feature order: name -> (mean, std, minimum, maximum).
+# Statistics only make the dummy look plausible (roughly the UCI #350 values).
+CREDIT_NUMERIC: dict[str, tuple[float, float, float, float]] = {
+    "limit_bal": (167484.0, 129747.0, 1.0, 10_000_000.0),  # >= 1: it is a ratio denominator
+    "age": (35.5, 9.2, 18.0, 120.0),
+    **{f"pay_{m}": (0.0, 1.1, -2.0, 8.0) for m in CREDIT_MONTHS},
+    **{f"bill_amt{m}": (50000.0, 70000.0, -10_000_000.0, 10_000_000.0) for m in CREDIT_MONTHS},
+    **{f"pay_amt{m}": (5500.0, 14000.0, 0.0, 10_000_000.0) for m in CREDIT_MONTHS},
 }
+_INTEGER_FIELDS = frozenset({"age", *(f"pay_{m}" for m in CREDIT_MONTHS)})
 
 
-def drybean_spec() -> TabularInput:
-    fields = tuple(
-        NumericField(name=n, minimum=lo, maximum=hi) for n, (_, _, lo, hi) in DRYBEAN_FIELDS.items()
+def credit_spec() -> TabularInput:
+    fields: list[NumericField | CategoricalField] = [
+        NumericField(name="limit_bal", minimum=1.0, maximum=CREDIT_NUMERIC["limit_bal"][3]),
+        CategoricalField(name="education", vocabulary=EDUCATION),
+    ]
+    fields.extend(
+        NumericField(name=n, minimum=lo, maximum=hi)
+        for n, (_, _, lo, hi) in CREDIT_NUMERIC.items()
+        if n != "limit_bal"
     )
-    return TabularInput(
-        fields=fields, features=tuple(PassthroughFeature(source=f.name) for f in fields)
+    features: tuple[PassthroughFeature | OneHotFeature | RatioFeature, ...] = (
+        *(PassthroughFeature(source=n) for n in CREDIT_NUMERIC),
+        OneHotFeature(source="education"),
+        RatioFeature(name="bill_utilisation", numerator="bill_amt1", denominator="limit_bal"),
     )
+    return TabularInput(fields=tuple(fields), features=features)
 
 
-def build_drybean(
+def credit_features(record: Record) -> list[float]:
+    """Reference feature engineering, written independently of the API's ``to_vector``."""
+    cols = [float(record[n]) for n in CREDIT_NUMERIC]  # type: ignore[arg-type]
+    cols.extend(1.0 if record["education"] == v else 0.0 for v in EDUCATION)
+    cols.append(float(record["bill_amt1"]) / float(record["limit_bal"]))  # type: ignore[arg-type]
+    return cols
+
+
+def credit_record(rng: np.random.Generator) -> Record:
+    record: Record = {}
+    for name, (mean, std, lo, hi) in CREDIT_NUMERIC.items():
+        if name == "limit_bal":
+            value = float(np.clip(np.exp(rng.normal(11.8, 0.8)), 10000.0, 1_000_000.0))
+        else:
+            value = float(np.clip(rng.normal(mean, std), lo, hi))
+        record[name] = float(np.rint(value)) if name in _INTEGER_FIELDS else round(value, 2)
+    record["education"] = EDUCATION[int(rng.integers(len(EDUCATION)))]
+    return record
+
+
+def build_credit(
     root: Path, version: str = DUMMY_VERSION, status: Status = Status.DUMMY, seed: int = 11
 ) -> Path:
     rng = np.random.default_rng(seed)
-    means = [m for m, _, _, _ in DRYBEAN_FIELDS.values()]
-    variances = [s * s for _, s, _, _ in DRYBEAN_FIELDS.values()]
+    fit = np.asarray([credit_features(credit_record(rng)) for _ in range(2000)])
     layers: tuple[MlpLayer, ...] = (
         NormalizeLayer(key="norm"),
         DenseLayer(key="d0", activation="relu"),
         DenseLayer(key="d1", activation="relu"),
         DenseLayer(key="out", activation="softmax"),
     )
+    width = fit.shape[1]
     arrays: Arrays = {
-        **_stats("norm", means, variances),
-        **_dense(rng, "d0", 16, 16, 1.0),
-        **_dense(rng, "d1", 16, 12, 1.0),
-        **_dense(rng, "out", 12, len(DRYBEAN_LABELS), 1.4),
+        **_stats("norm", fit.mean(axis=0), fit.var(axis=0)),
+        **_dense(rng, "d0", width, 64, 1.0),
+        **_dense(rng, "d1", 64, 32, 1.0),
+        **_dense(rng, "out", 32, len(CREDIT_LABELS), 1.4),
     }
-
-    def sample() -> Record:
-        record: Record = {}
-        for name, (mean, std, lo, hi) in DRYBEAN_FIELDS.items():
-            value = rng.normal(mean, std)
-            value = max(value, lo + 1e-6)
-            record[name] = float(min(value, hi) if hi is not None else value)
-        return record
-
-    records = [sample() for _ in range(24)]
+    records = [credit_record(rng) for _ in range(24)]
 
     def labels_for(i: int, row: F32) -> str:
         # ~2/3 of the labels agree with the model, so the metric is not trivially 1.0
         pick = int(np.argmax(row))
-        return DRYBEAN_LABELS[pick if i % 3 else (pick + 1) % len(DRYBEAN_LABELS)]
+        return CREDIT_LABELS[pick if i % 3 else (pick + 1) % len(CREDIT_LABELS)]
 
     return _tabular_artifact(
-        out_dir=root / "drybean-mlp" / version,
-        name="drybean-mlp",
+        out_dir=root / "credit-default-mlp" / version,
+        name="credit-default-mlp",
         version=version,
         status=status,
-        description="DUMMY Dry Bean classifier (16 numeric features, 7 classes); random weights.",
+        description=(
+            "DUMMY credit card default classifier (UCI 350 schema, binary); random weights. "
+            "Educational only: not a real credit decision model."
+        ),
         task=Task.CLASSIFICATION,
-        spec=drybean_spec(),
-        output=ClassificationOutput(labels=DRYBEAN_LABELS),
+        spec=credit_spec(),
+        output=ClassificationOutput(labels=CREDIT_LABELS),
         layers=layers,
         arrays=arrays,
         records=records,
-        featurize=lambda r: [float(r[n]) for n in DRYBEAN_FIELDS],  # type: ignore[arg-type]
+        featurize=credit_features,
         labels_for=labels_for,
         tolerance=GoldenTolerance(),
-        quality=_accuracy_quality(len(DRYBEAN_LABELS), DRYBEAN_LABELS),
+        quality=_accuracy_quality(len(CREDIT_LABELS), CREDIT_LABELS),
     )
 
 
-# ---- California Housing
+# ---- Realised volatility, next 5 sessions (regression in log space)
 
-OCEAN = ("<1H OCEAN", "INLAND", "ISLAND", "NEAR BAY", "NEAR OCEAN")
-BEDROOMS_IMPUTE = 435.0
-TARGET_MEAN, TARGET_STD = 206856.0, 115396.0
-# name: (mean, std, minimum, maximum)
-HOUSING_FIELDS: dict[str, tuple[float, float, float, float]] = {
-    "longitude": (-119.6, 2.0, -125.0, -114.0),
-    "latitude": (35.6, 2.1, 32.0, 42.0),
-    "housing_median_age": (28.6, 12.6, 0.0, 100.0),
-    "total_rooms": (2636.0, 2182.0, 1.0, 100000.0),
-    "total_bedrooms": (538.0, 421.0, 1.0, 20000.0),
-    "population": (1425.0, 1132.0, 1.0, 100000.0),
-    "households": (500.0, 382.0, 1.0, 20000.0),  # >= 1: it is a ratio denominator
-    "median_income": (3.87, 1.9, 0.0, 20.0),
+DOW = ("mon", "tue", "wed", "thu", "fri")
+VOL_UNIT = "volatilidade anualizada (fração)"
+LOG_TARGET_MEAN, LOG_TARGET_STD = float(np.log(0.25)), 0.5
+# name: (mean, std, minimum, maximum), in request order (the categorical "dow" comes last).
+VOL_NUMERIC: dict[str, tuple[float, float, float, float]] = {
+    **{f"ret_{d}d": (0.0, 0.015, -0.4, 0.4) for d in range(1, 6)},
+    "rv_5": (0.25, 0.15, 0.0, 10.0),
+    "rv_10": (0.25, 0.14, 0.0, 10.0),
+    "rv_20": (0.25, 0.13, 1e-6, 10.0),  # > 0: it is a ratio denominator
+    "rv_60": (0.26, 0.12, 0.0, 10.0),
+    "pk_5": (0.22, 0.12, 0.0, 10.0),
+    "pk_20": (0.22, 0.10, 0.0, 10.0),
+    "range_5": (0.017, 0.010, 0.0, 1.0),
+    "volume_ratio": (1.0, 0.4, 1e-6, 1000.0),
+    "log_dollar_volume": (18.5, 1.5, 0.0, 40.0),
+    "gap": (0.0005, 0.008, -1.0, 10.0),
+    "mom_20": (0.01, 0.07, -1.0, 10.0),
+    "mom_60": (0.03, 0.12, -1.0, 10.0),
+    "drawdown_60": (-0.06, 0.06, -1.0, 0.0),
+    "mkt_rv_20": (0.14, 0.06, 0.0, 5.0),
 }
 
 
-def housing_spec() -> TabularInput:
+def volatility_spec() -> TabularInput:
     fields: list[NumericField | CategoricalField] = [
-        NumericField(
-            name=n,
-            minimum=lo,
-            maximum=hi,
-            impute=BEDROOMS_IMPUTE if n == "total_bedrooms" else None,
-        )
-        for n, (_, _, lo, hi) in HOUSING_FIELDS.items()
+        NumericField(name=n, minimum=lo, maximum=hi) for n, (_, _, lo, hi) in VOL_NUMERIC.items()
     ]
-    fields.append(CategoricalField(name="ocean_proximity", vocabulary=OCEAN))
-    features = (
-        *(PassthroughFeature(source=n) for n in HOUSING_FIELDS),
-        OneHotFeature(source="ocean_proximity"),
-        RatioFeature(name="rooms_per_household", numerator="total_rooms", denominator="households"),
-        RatioFeature(
-            name="population_per_household", numerator="population", denominator="households"
-        ),
+    fields.append(CategoricalField(name="dow", vocabulary=DOW))
+    features: tuple[PassthroughFeature | OneHotFeature | RatioFeature, ...] = (
+        *(PassthroughFeature(source=n) for n in VOL_NUMERIC),
+        OneHotFeature(source="dow"),
+        RatioFeature(name="rv_ratio", numerator="rv_5", denominator="rv_20"),
     )
     return TabularInput(fields=tuple(fields), features=features)
 
 
-def housing_features(record: Record) -> list[float]:
+def volatility_features(record: Record) -> list[float]:
     """Reference feature engineering, written independently of the API's ``to_vector``."""
-    values = {n: record[n] for n in HOUSING_FIELDS}
-    if values["total_bedrooms"] is None:
-        values["total_bedrooms"] = BEDROOMS_IMPUTE
-    cols = [float(values[n]) for n in HOUSING_FIELDS]  # type: ignore[arg-type]
-    cols.extend(1.0 if record["ocean_proximity"] == v else 0.0 for v in OCEAN)
-    cols.append(float(values["total_rooms"]) / float(values["households"]))  # type: ignore[arg-type]
-    cols.append(float(values["population"]) / float(values["households"]))  # type: ignore[arg-type]
+    cols = [float(record[n]) for n in VOL_NUMERIC]  # type: ignore[arg-type]
+    cols.extend(1.0 if record["dow"] == v else 0.0 for v in DOW)
+    cols.append(float(record["rv_5"]) / float(record["rv_20"]))  # type: ignore[arg-type]
     return cols
 
 
-def _housing_record(rng: np.random.Generator, null_bedrooms: bool) -> Record:
+def volatility_record(rng: np.random.Generator) -> Record:
     record: Record = {}
-    for name, (mean, std, lo, hi) in HOUSING_FIELDS.items():
-        record[name] = float(np.clip(rng.normal(mean, std), lo + 0.5, hi))
-    record["total_bedrooms"] = None if null_bedrooms else record["total_bedrooms"]
-    record["ocean_proximity"] = OCEAN[int(rng.integers(len(OCEAN)))]
+    for name, (mean, std, lo, hi) in VOL_NUMERIC.items():
+        floor = lo if lo < 0 else max(lo, 1e-4)  # keep strictly positive values away from 0
+        record[name] = round(float(np.clip(rng.normal(mean, std), floor, hi)), 6)
+    record["dow"] = DOW[int(rng.integers(len(DOW)))]
     return record
 
 
-def build_housing(
+def build_volatility(
     root: Path, version: str = DUMMY_VERSION, status: Status = Status.DUMMY, seed: int = 12
 ) -> Path:
     rng = np.random.default_rng(seed)
-    fit = np.asarray(
-        [housing_features(_housing_record(rng, null_bedrooms=False)) for _ in range(2000)]
-    )
+    fit = np.asarray([volatility_features(volatility_record(rng)) for _ in range(2000)])
+    # normalize -> dense -> dense -> dense -> denormalize -> exp: the same tail the exported
+    # inference clone has, so the NumPy fallback exercises ExpLayer.
     layers: tuple[MlpLayer, ...] = (
         NormalizeLayer(key="norm"),
         DenseLayer(key="d0", activation="relu"),
         DenseLayer(key="d1", activation="relu"),
         DenseLayer(key="out", activation="linear"),
         DenormalizeLayer(key="target"),
+        ExpLayer(),
     )
     width = fit.shape[1]
     arrays: Arrays = {
@@ -539,69 +562,85 @@ def build_housing(
         **_dense(rng, "d0", width, 16, 1.0),
         **_dense(rng, "d1", 16, 8, 1.0),
         **_dense(rng, "out", 8, 1, 0.5),
-        **_stats("target", [TARGET_MEAN], [TARGET_STD**2]),
+        **_stats("target", [LOG_TARGET_MEAN], [LOG_TARGET_STD**2]),
     }
-    records = [_housing_record(rng, null_bedrooms=(i % 4 == 1)) for i in range(24)]
+    records = [volatility_record(rng) for _ in range(24)]
 
     def labels_for(i: int, row: F32) -> float:
         # a deterministic "ground truth" around the prediction (so RMSE is non-zero)
         return float(row[0] * (1.0 + 0.15 * np.sin(i * 1.7)))
 
     return _tabular_artifact(
-        out_dir=root / "housing-mlp" / version,
-        name="housing-mlp",
+        out_dir=root / "volatility-mlp" / version,
+        name="volatility-mlp",
         version=version,
         status=status,
-        description="DUMMY California Housing regressor (median house value, USD); random weights.",
+        description=(
+            "DUMMY next-5-sessions realised volatility regressor (annualised fraction, "
+            "exp of a log-space MLP); random weights. Educational only: not investment advice."
+        ),
         task=Task.REGRESSION,
-        spec=housing_spec(),
-        output=RegressionOutput(target="median_house_value", unit="USD"),
+        spec=volatility_spec(),
+        output=RegressionOutput(target="realized_volatility_5d", unit=VOL_UNIT),
         layers=layers,
         arrays=arrays,
         records=records,
-        featurize=housing_features,
+        featurize=volatility_features,
         labels_for=labels_for,
-        # outputs are ~1e5 USD: float32 resolution is ~0.01, so allow a cent-level tolerance
-        tolerance=GoldenTolerance(output_atol=0.5),
+        tolerance=GoldenTolerance(),
         quality=_rmse_quality,
     )
 
 
 # --------------------------------------------------------------------------- image model
 
-INTEL_LABELS = ("buildings", "forest", "glacier", "mountain", "sea", "street")
-IMAGE_SIZE = 150
-POOL = 30  # 150 / 30 = 5x5 grid
-# Mean RGB of each synthetic class, loosely evocative (a dummy "scene" is a colour field).
-_BASE_COLOURS = {
-    "buildings": (150, 135, 120),
-    "forest": (40, 100, 45),
-    "glacier": (205, 225, 240),
-    "mountain": (125, 105, 90),
-    "sea": (30, 90, 160),
-    "street": (80, 80, 85),
-}
+CANDLE_LABELS = ("baixa", "media", "alta")
+IMAGE_SIZE = 64
+POOL = 16  # 64 / 16 = 4x4 grid
+SESSIONS = 20
+# Daily volatility of the synthetic geometric random walk behind each regime.
+_DAILY_SIGMA = {"baixa": 0.004, "media": 0.012, "alta": 0.03}
+_PRICE_SPAN = 0.12  # +-12 % around the first close spans the plot area
 
 
-def synthetic_image(label: str, rng: np.random.Generator) -> NDArray[np.uint8]:
-    """A 150x150 RGB image: class colour, vertical gradient and a little noise."""
-    base = np.asarray(_BASE_COLOURS[label], dtype=np.float64)
-    gradient = np.linspace(-25.0, 25.0, IMAGE_SIZE)[:, None, None]
-    # coarse blocks (cheap to compress, keeps the committed PNGs small) + a touch of fine noise
-    blocks = rng.normal(0.0, 8.0, size=(IMAGE_SIZE // 10, IMAGE_SIZE // 10, 3))
-    noise = np.kron(blocks, np.ones((10, 10, 1))) + rng.normal(
-        0.0, 1.0, (IMAGE_SIZE, IMAGE_SIZE, 3)
-    )
-    pixels = base[None, None, :] + gradient * (1.0 if label != "sea" else -1.0) + noise
-    return np.clip(np.rint(pixels), 0, 255).astype(np.uint8)
+def synthetic_chart(label: str, rng: np.random.Generator) -> NDArray[np.uint8]:
+    """A 64x64 RGB chart of 20 synthetic sessions (never derived from real market data).
+
+    Channel 0: OHLC bars (open tick left, close tick right); channel 1: running mean of the
+    close; channel 2: volume bars from the bottom edge. Fixed vertical scale, no antialiasing.
+    """
+    sigma = _DAILY_SIGMA[label]
+    closes = 100.0 * np.exp(np.cumsum(rng.normal(0.0, sigma, SESSIONS)))
+    opens = np.concatenate(([100.0], closes[:-1]))
+    wick = np.abs(rng.normal(0.0, sigma * 0.6, (2, SESSIONS)))
+    highs = np.maximum(opens, closes) * (1.0 + wick[0])
+    lows = np.minimum(opens, closes) * (1.0 - wick[1])
+    volume = rng.lognormal(0.0, 0.4, SESSIONS)
+    mean_close = np.cumsum(closes) / np.arange(1, SESSIONS + 1)
+
+    def row(price: float) -> int:
+        y = 31.5 - (price / 100.0 - 1.0) / _PRICE_SPAN * 31.5
+        return int(np.clip(np.rint(y), 0, IMAGE_SIZE - 1))
+
+    image = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
+    for i in range(SESSIONS):
+        x = 3 + 3 * i
+        image[row(highs[i]) : row(lows[i]) + 1, x, 0] = 255
+        image[row(opens[i]), x - 1, 0] = 255
+        image[row(closes[i]), x + 1, 0] = 255
+        image[row(mean_close[i]), x - 1 : x + 2, 1] = 255
+        height = int(np.rint(volume[i] / volume.max() * 40))
+        if height:
+            image[IMAGE_SIZE - height :, x, 2] = 255
+    return image
 
 
 def pooled_features(images: F32) -> F32:
-    """Reference for Mul(1/255) -> NCHW -> AveragePool(30) -> Flatten, on NHWC input."""
+    """Reference for Mul(1/255) -> NCHW -> AveragePool(16) -> Flatten, on NHWC input."""
     x = images / np.float32(255.0)
     n = x.shape[0]
     grid = IMAGE_SIZE // POOL
-    pooled = x.reshape(n, grid, POOL, grid, POOL, 3).mean(axis=(2, 4))  # (n, 5, 5, 3)
+    pooled = x.reshape(n, grid, POOL, grid, POOL, 3).mean(axis=(2, 4))  # (n, 4, 4, 3)
     return np.ascontiguousarray(pooled.transpose(0, 3, 1, 2).reshape(n, -1)).astype(np.float32)
 
 
@@ -629,37 +668,40 @@ def cnn_onnx(kernel: F32, bias: F32) -> bytes:
         helper.make_node("Add", ["logits0", "fc.bias"], ["logits"]),
         helper.make_node("Softmax", ["logits"], ["output_0"], axis=-1),
     ]
-    assert kernel.shape == (n_features, len(INTEL_LABELS))  # noqa: S101 - generator sanity check
+    assert kernel.shape == (n_features, len(CANDLE_LABELS))  # noqa: S101 - generator sanity check
     return _serialize(
-        nodes, inits, [("inputs", ["batch", IMAGE_SIZE, IMAGE_SIZE, 3])], ("output_0", ["batch", 6])
+        nodes,
+        inits,
+        [("inputs", ["batch", IMAGE_SIZE, IMAGE_SIZE, 3])],
+        ("output_0", ["batch", len(CANDLE_LABELS)]),
     )
 
 
-def build_intel(
+def build_candlestick(
     root: Path, version: str = DUMMY_VERSION, status: Status = Status.DUMMY, seed: int = 13
 ) -> Path:
     rng = np.random.default_rng(seed)
-    # "Train" a nearest-centroid classifier on synthetic images: logits = -k * ||x - c||^2.
+    # "Train" a nearest-centroid classifier on synthetic charts: logits = -k * ||x - c||^2.
     centroids = np.stack(
         [
             pooled_features(
-                np.stack([synthetic_image(label, rng) for _ in range(8)]).astype(np.float32)
+                np.stack([synthetic_chart(label, rng) for _ in range(16)]).astype(np.float32)
             ).mean(axis=0)
-            for label in INTEL_LABELS
+            for label in CANDLE_LABELS
         ]
     )
-    k = np.float32(1.5)
-    kernel = (2 * k * centroids.T).astype(np.float32)  # (75, 6)
+    k = np.float32(40.0)
+    kernel = (2 * k * centroids.T).astype(np.float32)  # (48, 3)
     bias = (-k * (centroids**2).sum(axis=1)).astype(np.float32)
 
-    out_dir = root / "intel-cnn" / version
+    out_dir = root / "candlestick-cnn" / version
     golden_dir = out_dir / "golden"
     golden_dir.mkdir(parents=True, exist_ok=True)
     files, labels = [], []
     for i in range(12):
-        label = INTEL_LABELS[i % len(INTEL_LABELS)]
+        label = CANDLE_LABELS[i % len(CANDLE_LABELS)]
         name = f"g{i:02d}_{label}.png"
-        Image.fromarray(synthetic_image(label, rng)).save(golden_dir / name, format="PNG")
+        Image.fromarray(synthetic_chart(label, rng)).save(golden_dir / name, format="PNG")
         files.append(name)
         labels.append(label)
     images = np.stack(
@@ -670,12 +712,12 @@ def build_intel(
     max_diff = float(np.max(np.abs(ort_run(onnx_bytes, images) - outputs)))
     accuracy = float(
         np.mean(
-            [INTEL_LABELS[int(np.argmax(o))] == y for o, y in zip(outputs, labels, strict=True)]
+            [CANDLE_LABELS[int(np.argmax(o))] == y for o, y in zip(outputs, labels, strict=True)]
         )
     )
 
     golden = ImageGolden(
-        model="intel-cnn",
+        model="candlestick-cnn",
         version=version,
         cases=tuple(
             ImageGoldenCase(file=f, output=tuple(_round(v) for v in o), label=y)
@@ -684,16 +726,21 @@ def build_intel(
     )
     golden_sha = _write(out_dir / "golden.json", (golden.model_dump_json(indent=2) + "\n").encode())
     onnx_sha = _write(out_dir / "model.onnx", onnx_bytes)
-    in_spec, out_spec = _tensors((None, IMAGE_SIZE, IMAGE_SIZE, 3), len(INTEL_LABELS))
+    in_spec, out_spec = _tensors((None, IMAGE_SIZE, IMAGE_SIZE, 3), len(CANDLE_LABELS))
     manifest = Manifest(
-        name="intel-cnn",
+        name="candlestick-cnn",
         version=version,
         status=status,
         task=Task.IMAGE_CLASSIFICATION,
-        description="DUMMY Intel scenes classifier (150x150 RGB, 6 classes): pooling + linear.",
+        description=(
+            "DUMMY volatility-regime classifier on 64x64 OHLC chart images (3 classes): "
+            "pooling + linear. Educational only: not investment advice."
+        ),
         created_at=CREATED_AT,
-        input=ImageInput(height=IMAGE_SIZE, width=IMAGE_SIZE),
-        output=ClassificationOutput(labels=INTEL_LABELS),
+        input=ImageInput(
+            height=IMAGE_SIZE, width=IMAGE_SIZE, formats=("PNG",), max_bytes=1_048_576
+        ),
+        output=ClassificationOutput(labels=CANDLE_LABELS),
         inputs=(in_spec,),
         outputs=(out_spec,),
         runtimes=(OnnxRuntimeSpec(file="model.onnx", sha256=onnx_sha, opset=OPSET),),
@@ -704,7 +751,7 @@ def build_intel(
         serving_skew=ServingSkew(
             samples=len(files), max_abs_diff=max_diff, top1_agreement=1.0, accuracy_delta_pp=0.0
         ),
-        training=_training_info("intel-cnn"),
+        training=_training_info("candlestick-cnn"),
         golden=GoldenRef(file="golden.json", sha256=golden_sha),
     )
     return _finish(out_dir, manifest, _results(manifest))
@@ -713,9 +760,9 @@ def build_intel(
 # --------------------------------------------------------------------------- CLI
 
 BUILDERS: dict[str, Callable[..., Path]] = {
-    "drybean-mlp": build_drybean,
-    "housing-mlp": build_housing,
-    "intel-cnn": build_intel,
+    "credit-default-mlp": build_credit,
+    "volatility-mlp": build_volatility,
+    "candlestick-cnn": build_candlestick,
 }
 
 

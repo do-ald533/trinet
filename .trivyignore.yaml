@@ -3,8 +3,7 @@
 # Policy: an entry is a documented, time-boxed exception, never a silent mute. Each entry needs
 # `statement` (why it is not exploitable / no fix exists), an `expired_at` date (the gate bites
 # again after it) and the narrowest `paths` / `purls` that apply. Prefer `--ignore-unfixed` (already
-# on in CI) and a VEX document (`trivy image --vex <file>`; for Docker Hardened Images export theirs
-# with `docker scout vex get registry://dhi.io/python:3.13`) over entries here.
+# on in CI) and a VEX document (`trivy image --vex <file>`) over entries here.
 #
 # Example:
 #   vulnerabilities:

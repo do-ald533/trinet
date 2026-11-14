@@ -3,10 +3,9 @@
 failure-threshold: warning
 no-fail: false
 
-# Registries the Dockerfile may pull from (DL3026). dhi.io = Docker Hardened Images; ghcr.io =
-# the pinned uv image; docker.io = the pinned python:3.13-slim fallback.
+# Registries the Dockerfile may pull from (DL3026). ghcr.io = the pinned uv image; docker.io = the
+# pinned python:3.13-slim base.
 trustedRegistries:
-  - dhi.io
   - ghcr.io
   - docker.io
 

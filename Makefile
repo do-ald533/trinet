@@ -16,9 +16,9 @@ COMPOSE      := docker compose -f $(COMPOSE_FILE) $(if $(wildcard .env),--env-fi
 
 # Image built/used locally. `make deploy` takes DEPLOY_IMAGE instead.
 IMAGE ?= trinet-api:local
-# BASE=dhi  -> Docker Hardened Images (needs `docker login dhi.io`)
-# BASE=slim -> pinned python:3.13-slim-trixie fallback (no credentials needed)
-BASE  ?= dhi
+# BASE=slim -> pinned python:3.13-slim-trixie (default; free, no credentials; used by CI/CD)
+# BASE=dhi  -> optional Docker Hardened Images (needs `docker login dhi.io`; never used by CI/CD)
+BASE  ?= slim
 DHI_BASE_IMAGE  ?= dhi.io/python:3.13
 DHI_BUILD_IMAGE ?= dhi.io/python:3.13-dev
 # Extra `uv sync` arguments inside the image, e.g. UV_SYNC_ARGS="--extra litert"
@@ -42,7 +42,7 @@ DEPLOY_OWNER  = $(word 2,$(subst /, ,$(DEPLOY_IMAGE)))
 GH_REPO      ?= $(DEPLOY_OWNER)/trinet
 
 .PHONY: help install lint fmt typecheck imports deptry test cov integration schema schema-check dummy \
-        check-artifacts check-artifacts-release build smoke secrets up down observability logs \
+        check-artifacts check-artifacts-release free-flows model-cards model-cards-check build smoke secrets up down observability logs \
         deploy dhi-digests tools scan notebook clean
 
 help: ## Show this help
@@ -67,7 +67,10 @@ imports: ## import-linter architecture contracts
 	$(UVRUN) lint-imports
 
 deptry: ## unused/missing/transitive dependency check of the API
-	$(UVRUN) deptry api/src
+	cd api && $(UVRUN) deptry src
+
+free-flows: ## Fail if a CI/CD flow needs a credential or a paid service (ADR 0012)
+	$(UVRUN_LIGHT) python tools/check_free_flows.py
 
 test: ## pytest (fast, parallel)
 	$(UVRUN) pytest -n auto
@@ -75,8 +78,11 @@ test: ## pytest (fast, parallel)
 cov: ## pytest with coverage gate (>= 85%) and coverage.xml
 	$(UVRUN) pytest -n auto --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=85
 
+# basetemp lives under SMOKE_TMPDIR because Docker Desktop (Linux) only bind-mounts shared paths ($HOME). On Docker
+# Desktop also export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock so the Ryuk reaper can mount the socket.
 integration: ## Testcontainers smoke against IMAGE (needs Docker; IMAGE can be a digest reference)
-	TRINET_IMAGE=$(IMAGE) $(UVRUN) pytest -m integration api/tests/integration
+	mkdir -p $(SMOKE_TMPDIR)
+	TRINET_IMAGE=$(IMAGE) $(UVRUN) pytest -m integration api/tests/integration --basetemp=$(SMOKE_TMPDIR)/pytest-integration
 
 schema: ## Regenerate contract/schema/*.json
 	$(UVRUN) python -m trinet_contract.schema
@@ -91,8 +97,14 @@ dummy: ## Generate dummy artifacts (status "dummy") for pipeline development
 check-artifacts: ## Validate manifests, golden files, SHA-256 and sizes under artifacts/
 	$(UVRUN_LIGHT) python tools/check_artifacts.py
 
-check-artifacts-release: ## Same + release gate (no dummy, latest >= 1.0.0)
+check-artifacts-release: ## Same + release gate (3 models, no dummy, latest >= 1.0.0)
 	$(UVRUN_LIGHT) python tools/check_artifacts.py --release
+
+model-cards: ## Regenerate docs/model-cards/*.md from the latest artifacts
+	$(UVRUN) python tools/gen_model_card.py
+
+model-cards-check: ## Fail if the committed model cards are out of date
+	$(UVRUN) python tools/gen_model_card.py --check
 
 # --- container -------------------------------------------------------------------------------
 build: ## Build the API image (BASE=dhi|slim, IMAGE=name:tag)
@@ -135,7 +147,7 @@ deploy: ## Verify the attestations of DEPLOY_IMAGE (digest-pinned), then start i
 	$(MAKE) secrets
 	TRINET_IMAGE=$(DEPLOY_IMAGE) $(COMPOSE) up -d --no-build --pull always --wait
 
-dhi-digests: ## After `docker login dhi.io`: print digest-pinned DHI references to put in .env / repo variables
+dhi-digests: ## Optional (BASE=dhi): after `docker login dhi.io`, print digest-pinned DHI references for .env
 	@for ref in $(DHI_BASE_IMAGE) $(DHI_BUILD_IMAGE); do \
 		digest="sha256:$$(docker buildx imagetools inspect --raw $$ref | sha256sum | cut -d' ' -f1)"; \
 		echo "$${ref}@$${digest}"; done

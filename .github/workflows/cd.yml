@@ -73,36 +73,6 @@ jobs:
             echo "tag=sha-${GITHUB_SHA::12}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Choose the base image
-        id: base
-        env:
-          DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
-          DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
-          DHI_BASE_IMAGE: ${{ vars.DHI_BASE_IMAGE }}
-          DHI_BUILD_IMAGE: ${{ vars.DHI_BUILD_IMAGE }}
-        run: |
-          set -euo pipefail
-          if [ -n "$DHI_USERNAME" ] && [ -n "$DHI_TOKEN" ]; then
-            {
-              echo "flavor=dhi"
-              echo "base=${DHI_BASE_IMAGE:-dhi.io/python:3.13}"
-              echo "build=${DHI_BUILD_IMAGE:-dhi.io/python:3.13-dev}"
-            } >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning title=Base image::DHI credentials are not configured: publishing an image built on the python:3.13-slim-trixie fallback"
-            {
-              echo "flavor=slim"
-              echo "base=slim"
-              echo "build=slim"
-            } >> "$GITHUB_OUTPUT"
-          fi
-      - name: Log in to dhi.io
-        if: ${{ steps.base.outputs.flavor == 'dhi' }}
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: dhi.io
-          username: ${{ secrets.DHI_USERNAME }}
-          password: ${{ secrets.DHI_TOKEN }}
       - name: Log in to GHCR
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
@@ -123,8 +93,8 @@ jobs:
           push: true
           tags: ${{ steps.name.outputs.image }}:${{ steps.name.outputs.tag }}
           build-args: |
-            BASE_IMAGE=${{ steps.base.outputs.base }}
-            BUILD_IMAGE=${{ steps.base.outputs.build }}
+            BASE_IMAGE=slim
+            BUILD_IMAGE=slim
             IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
             IMAGE_REVISION=${{ github.sha }}
             IMAGE_VERSION=${{ steps.name.outputs.tag }}
@@ -202,13 +172,12 @@ jobs:
       - name: Summary
         env:
           IMAGE_REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
-          FLAVOR: ${{ steps.base.outputs.flavor }}
         run: |
           {
             echo "### Published image"
             echo
             echo "- Reference: \`$IMAGE_REF\`"
-            echo "- Base: \`$FLAVOR\`"
+            echo "- Base: \`python:3.13-slim-trixie\` (pinned by digest)"
             echo "- Deploy: \`make deploy DEPLOY_IMAGE=$IMAGE_REF\`"
           } >> "$GITHUB_STEP_SUMMARY"
 

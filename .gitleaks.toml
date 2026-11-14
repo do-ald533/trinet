@@ -10,15 +10,8 @@ description = "Local virtual environments are never committed; they only matter 
 paths = ['''(^|/)\.venv/''']
 
 [[allowlists]]
-description = "Deterministic fake API key used by the API test-suite (not a credential)."
+description = "Deterministic fake API keys used by the API test-suite: the valid test key and deliberately wrong keys for the 401 tests (not credentials)."
 condition = "AND"
 regexTarget = "line"
 paths = ['''^api/tests/''']
-regexes = ['''test-api-key-0123456789abcdef''']
-
-[[allowlists]]
-description = "SonarQube organization/project keys are public project coordinates. Java properties files cannot carry an inline gitleaks:allow comment."
-condition = "AND"
-regexTarget = "line"
-paths = ['''^sonar-project\.properties$''']
-regexes = ['''^sonar\.(organization|projectKey|projectName)=''']
+regexes = ['''test-api-key-0123456789abcdef''', '''wrong-key-0123456789''']

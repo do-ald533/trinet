@@ -1,0 +1,375 @@
+{
+  "schema_version": "1.0",
+  "name": "volatility-mlp",
+  "version": "1.0.0",
+  "status": "candidate",
+  "task": "regression",
+  "description": "Regressor da volatilidade realizada dos proximos 5 pregoes de acoes do S&P 500 (anualizada, em fracao): MLP sobre ln(y) padronizado, com clone de inferencia Normalization(invert) -> exp. Entrada: features ja calculadas no fechamento de t. Projeto educacional: nao e recomendacao de investimento.",
+  "created_at": "2026-11-14T13:04:30Z",
+  "git_sha": null,
+  "input": {
+    "kind": "tabular",
+    "fields": [
+      {
+        "kind": "numeric",
+        "name": "ret_1d",
+        "description": "log-retorno de hoje",
+        "impute": null,
+        "minimum": -0.4,
+        "maximum": 0.4
+      },
+      {
+        "kind": "numeric",
+        "name": "ret_2d",
+        "description": "",
+        "impute": null,
+        "minimum": -0.4,
+        "maximum": 0.4
+      },
+      {
+        "kind": "numeric",
+        "name": "ret_3d",
+        "description": "",
+        "impute": null,
+        "minimum": -0.4,
+        "maximum": 0.4
+      },
+      {
+        "kind": "numeric",
+        "name": "ret_4d",
+        "description": "",
+        "impute": null,
+        "minimum": -0.4,
+        "maximum": 0.4
+      },
+      {
+        "kind": "numeric",
+        "name": "ret_5d",
+        "description": "",
+        "impute": null,
+        "minimum": -0.4,
+        "maximum": 0.4
+      },
+      {
+        "kind": "numeric",
+        "name": "rv_5",
+        "description": "vol. realizada anualizada, 5 pregoes",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10.0
+      },
+      {
+        "kind": "numeric",
+        "name": "rv_10",
+        "description": "",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10.0
+      },
+      {
+        "kind": "numeric",
+        "name": "rv_20",
+        "description": "vol. realizada anualizada, 20 pregoes (>= 1e-6: denominador da razao)",
+        "impute": null,
+        "minimum": 1e-06,
+        "maximum": 10.0
+      },
+      {
+        "kind": "numeric",
+        "name": "rv_60",
+        "description": "",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pk_5",
+        "description": "vol. de Parkinson anualizada, 5 pregoes",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pk_20",
+        "description": "",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10.0
+      },
+      {
+        "kind": "numeric",
+        "name": "range_5",
+        "description": "media de (maxima - minima) / fechamento, 5 pregoes",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 1.0
+      },
+      {
+        "kind": "numeric",
+        "name": "volume_ratio",
+        "description": "volume / media de 20 dias",
+        "impute": null,
+        "minimum": 1e-06,
+        "maximum": 1000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "log_dollar_volume",
+        "description": "ln(fechamento x volume)",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 40.0
+      },
+      {
+        "kind": "numeric",
+        "name": "gap",
+        "description": "abertura / fechamento anterior - 1",
+        "impute": null,
+        "minimum": -1.0,
+        "maximum": 10.0
+      },
+      {
+        "kind": "numeric",
+        "name": "mom_20",
+        "description": "retorno acumulado em 20 pregoes",
+        "impute": null,
+        "minimum": -1.0,
+        "maximum": 10.0
+      },
+      {
+        "kind": "numeric",
+        "name": "mom_60",
+        "description": "",
+        "impute": null,
+        "minimum": -1.0,
+        "maximum": 10.0
+      },
+      {
+        "kind": "numeric",
+        "name": "drawdown_60",
+        "description": "fechamento / maximo de 60 pregoes - 1 (<= 0)",
+        "impute": null,
+        "minimum": -1.0,
+        "maximum": 0.0
+      },
+      {
+        "kind": "numeric",
+        "name": "mkt_rv_20",
+        "description": "media de rv_20 de todos os tickers no dia (proxy de VIX)",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 5.0
+      },
+      {
+        "kind": "categorical",
+        "name": "dow",
+        "description": "dia da semana do fechamento",
+        "vocabulary": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "impute": null
+      }
+    ],
+    "features": [
+      {
+        "kind": "passthrough",
+        "source": "ret_1d"
+      },
+      {
+        "kind": "passthrough",
+        "source": "ret_2d"
+      },
+      {
+        "kind": "passthrough",
+        "source": "ret_3d"
+      },
+      {
+        "kind": "passthrough",
+        "source": "ret_4d"
+      },
+      {
+        "kind": "passthrough",
+        "source": "ret_5d"
+      },
+      {
+        "kind": "passthrough",
+        "source": "rv_5"
+      },
+      {
+        "kind": "passthrough",
+        "source": "rv_10"
+      },
+      {
+        "kind": "passthrough",
+        "source": "rv_20"
+      },
+      {
+        "kind": "passthrough",
+        "source": "rv_60"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pk_5"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pk_20"
+      },
+      {
+        "kind": "passthrough",
+        "source": "range_5"
+      },
+      {
+        "kind": "passthrough",
+        "source": "volume_ratio"
+      },
+      {
+        "kind": "passthrough",
+        "source": "log_dollar_volume"
+      },
+      {
+        "kind": "passthrough",
+        "source": "gap"
+      },
+      {
+        "kind": "passthrough",
+        "source": "mom_20"
+      },
+      {
+        "kind": "passthrough",
+        "source": "mom_60"
+      },
+      {
+        "kind": "passthrough",
+        "source": "drawdown_60"
+      },
+      {
+        "kind": "passthrough",
+        "source": "mkt_rv_20"
+      },
+      {
+        "kind": "one_hot",
+        "source": "dow"
+      },
+      {
+        "kind": "ratio",
+        "name": "rv_ratio",
+        "numerator": "rv_5",
+        "denominator": "rv_20"
+      }
+    ]
+  },
+  "output": {
+    "kind": "regression",
+    "target": "realized_volatility_5d",
+    "unit": "volatilidade anualizada (fração)"
+  },
+  "inputs": [
+    {
+      "name": "features",
+      "dtype": "float32",
+      "shape": [
+        null,
+        25
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "Identity:0",
+      "dtype": "float32",
+      "shape": [
+        null,
+        1
+      ]
+    }
+  ],
+  "runtimes": [
+    {
+      "kind": "onnx",
+      "file": "model.onnx",
+      "sha256": "4bdc862c682eb49f894c1dafab131c65ea58713a6d3f6beec6f682433b1f5c61",
+      "opset": 17
+    },
+    {
+      "kind": "numpy_mlp",
+      "file": "weights.npz",
+      "sha256": "23b0beac774a0a4132011a1dc0ab4b4d84f0720d923ead4beeab4c269fa750d6",
+      "layers": [
+        {
+          "op": "normalize",
+          "key": "norm"
+        },
+        {
+          "op": "dense",
+          "key": "dense_0",
+          "activation": "relu"
+        },
+        {
+          "op": "dense",
+          "key": "out",
+          "activation": "linear"
+        },
+        {
+          "op": "denormalize",
+          "key": "target"
+        },
+        {
+          "op": "exp"
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "validation": {
+      "rmse": 0.12858891306535794,
+      "mae": 0.07631471365145373,
+      "mae_over_mean": 0.3955072858120951,
+      "rmse_over_mean": 0.6664226275458006,
+      "qlike": 0.7996118802257418,
+      "r2_log": 0.20943749228861075,
+      "bias": -0.014965607460061538
+    },
+    "test": {
+      "rmse": 0.13321432756158516,
+      "mae": 0.07407369540278452,
+      "mae_over_mean": 0.38764347241828745,
+      "rmse_over_mean": 0.6971390347280939,
+      "qlike": 0.8706643354387426,
+      "r2_log": 0.2330663306039391,
+      "bias": -0.023078263805011247
+    }
+  },
+  "quality_gate": {
+    "metric": "rmse",
+    "split": "validation",
+    "threshold": 0.1351,
+    "value": 0.12858891306535794,
+    "higher_is_better": false
+  },
+  "serving_skew": {
+    "samples": 181404,
+    "max_abs_diff": 3.5762786865234375e-07,
+    "top1_agreement": null,
+    "accuracy_delta_pp": null
+  },
+  "training": {
+    "dataset": "S&P 500 5 anos (Kaggle camnugent/sandp500, all_stocks_5yr.csv; licenca nao verificada, dados nao redistribuidos)",
+    "data_sha256": "6aea253cd19de60b568143991aaf1fa482456565c389205658d236e595e716cf",
+    "seed": 42,
+    "python": "3.13.13",
+    "tensorflow": "2.21.0",
+    "keras": "3.15.1",
+    "hardware": "11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz | 8 threads | 33 GB RAM | GPU: nao (CPU)"
+  },
+  "golden": {
+    "file": "golden.json",
+    "sha256": "592f1bb15242282ca3b9f78c389a8d1b13af7deaa6c10c0c65f7374a97c2b838"
+  }
+}

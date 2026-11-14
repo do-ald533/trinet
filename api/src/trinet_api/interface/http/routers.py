@@ -42,6 +42,8 @@ log = structlog.get_logger("trinet_api.predictions")
 JSON = "application/json"
 MULTIPART = "multipart/form-data"
 MODEL_VERSION_HEADER = "X-Model-Version"
+HEALTH_LIVE_PATH = "/health/live"
+HEALTH_READY_PATH = "/health/ready"
 _MAX_LOGGED_LABELS = 10
 
 ModelName = Annotated[
@@ -105,13 +107,13 @@ PREDICTION_REQUEST_BODY: dict[str, Any] = {
 # --------------------------------------------------------------------------- health
 
 
-@health_router.get("/health/live", operation_id="health_live", summary="Liveness probe")
+@health_router.get(HEALTH_LIVE_PATH, operation_id="health_live", summary="Liveness probe")
 async def health_live() -> HealthResponse:
     return HealthResponse()
 
 
 @health_router.get(
-    "/health/ready",
+    HEALTH_READY_PATH,
     operation_id="health_ready",
     summary="Readiness probe",
     responses=problem_responses(503),

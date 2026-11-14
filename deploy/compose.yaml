@@ -18,8 +18,8 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
-        BASE_IMAGE: ${BASE_IMAGE:-dhi.io/python:3.13}
-        BUILD_IMAGE: ${BUILD_IMAGE:-dhi.io/python:3.13-dev}
+        BASE_IMAGE: ${BASE_IMAGE:-slim}
+        BUILD_IMAGE: ${BUILD_IMAGE:-slim}
     init: true
     restart: unless-stopped
 

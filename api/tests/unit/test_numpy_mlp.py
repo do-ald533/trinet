@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from typing import Any
 
 import make_dummy_artifacts as dummy
 import numpy as np
@@ -9,6 +10,7 @@ import pytest
 from trinet_api.infrastructure.runtimes import RuntimeLoadError
 from trinet_api.infrastructure.runtimes.numpy_mlp import NumpyMlpRuntime
 from trinet_contract import DenormalizeLayer, DenseLayer, NormalizeLayer, TensorSpec
+from trinet_contract.manifest import MlpLayer
 
 LAYERS = (
     NormalizeLayer(key="n"),
@@ -38,8 +40,8 @@ def good_arrays() -> dict[str, np.ndarray]:
 
 
 def build(
-    arrays: dict[str, np.ndarray], layers: tuple = LAYERS, out: TensorSpec = OUT
-) -> NumpyMlpRuntime:  # type: ignore[type-arg]
+    arrays: dummy.Arrays, layers: tuple[MlpLayer, ...] = LAYERS, out: TensorSpec = OUT
+) -> NumpyMlpRuntime:
     return NumpyMlpRuntime(dummy.npz_bytes(arrays), layers, IN, out)
 
 
@@ -97,7 +99,8 @@ def test_output_width_must_match_the_manifest() -> None:
 
 def test_pickled_arrays_are_never_loaded() -> None:
     buffer = io.BytesIO()
-    np.savez(buffer, **{"n.mean": np.array([object()], dtype=object)})  # savez pickles objects
+    payload: dict[str, Any] = {"n.mean": np.array([object()], dtype=object)}
+    np.savez(buffer, **payload)  # savez pickles objects
     with pytest.raises(RuntimeLoadError, match=r"unreadable|not a valid"):
         NumpyMlpRuntime(buffer.getvalue(), LAYERS, IN, OUT)
 

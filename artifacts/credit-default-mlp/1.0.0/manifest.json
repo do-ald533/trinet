@@ -1,0 +1,388 @@
+{
+  "schema_version": "1.0",
+  "name": "credit-default-mlp",
+  "version": "1.0.0",
+  "status": "candidate",
+  "task": "classification",
+  "description": "Classificador de inadimplencia de cartao de credito (UCI #350, Taiwan 2005): MLP Normalization -> Dense(relu) -> Dropout -> Dense(2, softmax), treinado com class_weight. SEX e MARRIAGE nao sao features. Projeto educacional: nao e um modelo de decisao de credito real.",
+  "created_at": "2026-11-14T13:04:29Z",
+  "git_sha": null,
+  "input": {
+    "kind": "tabular",
+    "fields": [
+      {
+        "kind": "numeric",
+        "name": "limit_bal",
+        "description": "limite de credito (NT$); >= 1 (denominador da razao)",
+        "impute": null,
+        "minimum": 1.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "age",
+        "description": "idade em anos",
+        "impute": null,
+        "minimum": 18.0,
+        "maximum": 120.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_1",
+        "description": "situacao do pagamento 1 meses atras (set->abr/2005): -2/-1/0 = sem atraso, 1..8 = meses de atraso",
+        "impute": null,
+        "minimum": -2.0,
+        "maximum": 8.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_2",
+        "description": "situacao do pagamento 2 meses atras (set->abr/2005): -2/-1/0 = sem atraso, 1..8 = meses de atraso",
+        "impute": null,
+        "minimum": -2.0,
+        "maximum": 8.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_3",
+        "description": "situacao do pagamento 3 meses atras (set->abr/2005): -2/-1/0 = sem atraso, 1..8 = meses de atraso",
+        "impute": null,
+        "minimum": -2.0,
+        "maximum": 8.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_4",
+        "description": "situacao do pagamento 4 meses atras (set->abr/2005): -2/-1/0 = sem atraso, 1..8 = meses de atraso",
+        "impute": null,
+        "minimum": -2.0,
+        "maximum": 8.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_5",
+        "description": "situacao do pagamento 5 meses atras (set->abr/2005): -2/-1/0 = sem atraso, 1..8 = meses de atraso",
+        "impute": null,
+        "minimum": -2.0,
+        "maximum": 8.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_6",
+        "description": "situacao do pagamento 6 meses atras (set->abr/2005): -2/-1/0 = sem atraso, 1..8 = meses de atraso",
+        "impute": null,
+        "minimum": -2.0,
+        "maximum": 8.0
+      },
+      {
+        "kind": "numeric",
+        "name": "bill_amt1",
+        "description": "valor da fatura 1 (NT$); pode ser negativo (credito do cliente)",
+        "impute": null,
+        "minimum": -10000000.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "bill_amt2",
+        "description": "valor da fatura 2 (NT$); pode ser negativo (credito do cliente)",
+        "impute": null,
+        "minimum": -10000000.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "bill_amt3",
+        "description": "valor da fatura 3 (NT$); pode ser negativo (credito do cliente)",
+        "impute": null,
+        "minimum": -10000000.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "bill_amt4",
+        "description": "valor da fatura 4 (NT$); pode ser negativo (credito do cliente)",
+        "impute": null,
+        "minimum": -10000000.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "bill_amt5",
+        "description": "valor da fatura 5 (NT$); pode ser negativo (credito do cliente)",
+        "impute": null,
+        "minimum": -10000000.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "bill_amt6",
+        "description": "valor da fatura 6 (NT$); pode ser negativo (credito do cliente)",
+        "impute": null,
+        "minimum": -10000000.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_amt1",
+        "description": "valor pago 1 (NT$)",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_amt2",
+        "description": "valor pago 2 (NT$)",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_amt3",
+        "description": "valor pago 3 (NT$)",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_amt4",
+        "description": "valor pago 4 (NT$)",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_amt5",
+        "description": "valor pago 5 (NT$)",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "pay_amt6",
+        "description": "valor pago 6 (NT$)",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 10000000.0
+      },
+      {
+        "kind": "categorical",
+        "name": "education",
+        "description": "escolaridade (codigos 0, 4, 5 e 6 do dataset = other)",
+        "vocabulary": [
+          "graduate",
+          "university",
+          "high_school",
+          "other"
+        ],
+        "impute": null
+      }
+    ],
+    "features": [
+      {
+        "kind": "passthrough",
+        "source": "limit_bal"
+      },
+      {
+        "kind": "passthrough",
+        "source": "age"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_1"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_2"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_3"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_4"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_5"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_6"
+      },
+      {
+        "kind": "passthrough",
+        "source": "bill_amt1"
+      },
+      {
+        "kind": "passthrough",
+        "source": "bill_amt2"
+      },
+      {
+        "kind": "passthrough",
+        "source": "bill_amt3"
+      },
+      {
+        "kind": "passthrough",
+        "source": "bill_amt4"
+      },
+      {
+        "kind": "passthrough",
+        "source": "bill_amt5"
+      },
+      {
+        "kind": "passthrough",
+        "source": "bill_amt6"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_amt1"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_amt2"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_amt3"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_amt4"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_amt5"
+      },
+      {
+        "kind": "passthrough",
+        "source": "pay_amt6"
+      },
+      {
+        "kind": "one_hot",
+        "source": "education"
+      },
+      {
+        "kind": "ratio",
+        "name": "bill_utilisation",
+        "numerator": "bill_amt1",
+        "denominator": "limit_bal"
+      }
+    ]
+  },
+  "output": {
+    "kind": "classification",
+    "labels": [
+      "no_default",
+      "default"
+    ]
+  },
+  "inputs": [
+    {
+      "name": "features",
+      "dtype": "float32",
+      "shape": [
+        null,
+        25
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "Identity:0",
+      "dtype": "float32",
+      "shape": [
+        null,
+        2
+      ]
+    }
+  ],
+  "runtimes": [
+    {
+      "kind": "onnx",
+      "file": "model.onnx",
+      "sha256": "efc156a4b067bda13b971a7c08184e3ad6f58edbb81fa25c1975ecf53a81c719",
+      "opset": 17
+    },
+    {
+      "kind": "numpy_mlp",
+      "file": "weights.npz",
+      "sha256": "54b8faf6b42afa00eb3496007b6ab93e3747dc5e69edd123e29c1bc68eabbabd",
+      "layers": [
+        {
+          "op": "normalize",
+          "key": "norm"
+        },
+        {
+          "op": "dense",
+          "key": "dense_0",
+          "activation": "relu"
+        },
+        {
+          "op": "dense",
+          "key": "dense_1",
+          "activation": "relu"
+        },
+        {
+          "op": "dense",
+          "key": "out",
+          "activation": "softmax"
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "validation": {
+      "accuracy": 0.8176758682101514,
+      "precision": 0.6526315789473685,
+      "recall": 0.37462235649546827,
+      "f1": 0.4760076775431862,
+      "roc_auc": 0.78116665184442,
+      "pr_auc": 0.5607223142071832,
+      "ks": 0.431251973301536,
+      "brier": 0.13483013212680817
+    },
+    "test": {
+      "accuracy": 0.8201246660730187,
+      "precision": 0.6608695652173913,
+      "recall": 0.3826787512588117,
+      "f1": 0.4846938775510204,
+      "roc_auc": 0.7714156281740115,
+      "pr_auc": 0.538972384427955,
+      "ks": 0.4150597480448305,
+      "brier": 0.13699203729629517
+    }
+  },
+  "quality_gate": {
+    "metric": "accuracy",
+    "split": "validation",
+    "threshold": 0.78,
+    "value": 0.8176758682101514,
+    "higher_is_better": true
+  },
+  "serving_skew": {
+    "samples": 8984,
+    "max_abs_diff": 1.7881393432617188e-07,
+    "top1_agreement": 1.0,
+    "accuracy_delta_pp": null
+  },
+  "training": {
+    "dataset": "Default of Credit Card Clients (UCI #350, CC BY 4.0, DOI 10.24432/C55S3H)",
+    "data_sha256": "45bcf4df62ff2e237a74eb155cabfb4bbbc171219a0637daef44fdad07503dd0",
+    "seed": 42,
+    "python": "3.13.13",
+    "tensorflow": "2.21.0",
+    "keras": "3.15.1",
+    "hardware": "11th Gen Intel(R) Core(TM) i7-11370H @ 3.30GHz | 8 threads | 33 GB RAM | GPU: nao (CPU)"
+  },
+  "golden": {
+    "file": "golden.json",
+    "sha256": "0bca53a0949b8c8f0e532e9c7e06040acac713dbac0842b5d01b13449acd32b0"
+  }
+}

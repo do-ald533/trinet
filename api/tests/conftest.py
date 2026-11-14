@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 from hypothesis import HealthCheck
 from hypothesis import settings as hypothesis_settings
+from PIL import Image
 
 from trinet_api.domain.entities import ModelRegistry
 from trinet_api.infrastructure.loading import load_registry
@@ -28,6 +29,14 @@ hypothesis_settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "ci"))
 
 API_KEY = "test-api-key-0123456789abcdef"
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _restore_pillow_pixel_limit() -> Iterator[None]:
+    """``create_app`` sets Pillow's process-wide pixel limit; keep tests from leaking it."""
+    saved = Image.MAX_IMAGE_PIXELS
+    yield
+    Image.MAX_IMAGE_PIXELS = saved
 
 
 @pytest.fixture(scope="session")
@@ -67,6 +76,7 @@ def make_settings(artifacts_dir: Path, **overrides: Any) -> Settings:
         "api_key": API_KEY,
         "api_key_file": None,
         "metrics_enabled": False,
+        "log_level": "WARNING",
         "rate_limit": "100000/minute",
         "queue_timeout_s": 0.2,
     }
@@ -90,7 +100,10 @@ def make_client(
     stack = ExitStack()
 
     def factory(*, registry_override: ModelRegistry | None = None, **overrides: Any) -> TestClient:
-        app = create_app(settings_factory(**overrides), registry=registry_override or registry)
+        app = create_app(
+            settings_factory(**overrides),
+            registry=registry if registry_override is None else registry_override,
+        )
         return stack.enter_context(TestClient(app, raise_server_exceptions=False))
 
     yield factory

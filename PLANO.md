@@ -9,6 +9,68 @@
 > - **Credenciais** (Kaggle, `dhi.io`, segredos do GitHub) configuradas manualmente pelo usuário.
 > - **Nomes e RA**: adiados.
 > - `uv` atualizado localmente para 0.13.7; o contrato (`contract/`) define `manifest.json` e `golden.json` com schemas versionados em `contract/schema/`.
+>
+> **v1.3 (14/11/2026) — fluxos gratuitos e sem credenciais ([ADR 0012](docs/adr/0012-fluxos-gratuitos-e-sem-credenciais.md)).** A base padrão da imagem é `python:3.13-slim-trixie` fixada por digest (DHI só opcional e local), o SonarQube Cloud saiu, e `make free-flows` falha se um workflow exigir segredo, registro, runner ou serviço pago. Onde o texto abaixo citar `dhi.io`, `DHI_*` ou Sonar, vale esta nota.
+>
+> **v1.2 (14/11/2026) — viés de mercado financeiro. A seção "v1.2" logo abaixo substitui os datasets, alvos e nomes de modelo da v1.0 (§2, §4.2–§4.3 e os exemplos de §5–§6).** Onde o texto antigo citar Dry Bean, California Housing, Intel Scenes ou `drybean-mlp`/`housing-mlp`/`intel-cnn`, vale o mapeamento da v1.2. Arquitetura, contrato, API, CI/CD e segurança não mudam.
+
+---
+## v1.2 — Pivô para mercado financeiro
+**Aviso:** projeto **educacional** (trabalho de curso). Nada aqui é recomendação de investimento nem modelo de decisão de crédito real. O aviso vai no README, nos model cards e na descrição do OpenAPI.
+
+### V1. Mapeamento
+| Rede | Antes (v1.0) | Agora (v1.2) | Nome do modelo |
+|---|---|---|---|
+| Classificação tabular | Dry Bean | **Default of Credit Card Clients** (UCI #350): risco de crédito | `credit-default-mlp` |
+| Regressão tabular | California Housing | **Volatilidade realizada futura (5 pregões)** de ações do S&P 500: risco de mercado | `volatility-mlp` |
+| CNN de imagens | Intel Scenes | **Gráficos OHLC + volume renderizados** → **regime de volatilidade** (3 classes): risco de mercado "visual" (ideia de Jiang, Kelly e Xiu, *(Re-)Imag(in)ing Price Trends*, J. Finance 2023) | `candlestick-cnn` |
+
+As redes 2 e 3 modelam a **mesma grandeza** (volatilidade dos próximos 5 pregões) por duas vias, números × imagem, o que permite a pergunta de conclusão: "o gráfico acrescenta algo além das features?".
+Alvo de **direção** (sobe/desce) foi descartado como alvo principal: é quase aleatório (o artigo reporta ganho só em portfólio, e uma réplica menor concluiu que a CNN não passa de chute em acertos direcionais). Vale uma célula de sanidade curta mostrando isso.
+
+### V2. Dados (verificados em 14/11/2026)
+| Dataset | Fatos verificados | Licença / uso |
+|---|---|---|
+| **Default of Credit Card Clients**, UCI #350 | 30.000 × 23 + alvo `Y`; **sem NaN**; inadimplência **22,12%** (6.636); **35 linhas duplicadas** (sem o ID); `EDUCATION` com códigos **não documentados 0, 5, 6** (14/280/51 linhas), `MARRIAGE=0` (54), `PAY_*` com −2 e 0 não documentados; 590 `BILL_AMT1` negativos. CSV: `https://archive.ics.uci.edu/static/public/350/data.csv` (colunas `X1..X23`, `Y`) | CC BY 4.0 · DOI 10.24432/C55S3H · Yeh, I. (2009) |
+| **S&P 500, 5 anos** (Kaggle `camnugent/sandp500`) | `kagglehub.dataset_download` funciona **sem credenciais**. 619.040 × 7 (`date, open, high, low, close, volume, Name`), **505 tickers**, 2013-02-08 → 2018-02-07 (1.259 pregões; 470 tickers completos, mínimo 44 dias). Preços ajustados a splits (AAPL ≈ 92 em jun/2014). Problemas: 11 linhas com NaN em open/high/low, 1 `high<low`, 9 `close` fora de [low, high], 4 com volume 0, 6 saltos > 5 dias, **14 retornos |log| > 0,4** (spin-offs e splits não ajustados: BAX, DISCA/DISCK, EBAY, LNT, NI; e eventos reais: AMD, CHK, WMB) | ⚠️ licença e origem **não verificadas** → **nunca versionar o CSV** (`data/` no .gitignore); só imagens **sintéticas** vão para o repositório público |
+- **Vieses declarados:** sobrevivência (só constituintes do índice em fev/2018), período curto (um único regime de mercado, com a **alta de volatilidade de jan–fev/2018 dentro do teste**) e preço de fechamento ajustado por uma fonte não auditada.
+- O CI nunca baixa dataset.
+
+### V3. Regras de preparação de séries (iguais nas redes 2 e 3; função `load_sp500()` idêntica nos dois trechos do notebook)
+1. Ordenar por `(ticker, date)`; remover linhas com NaN em OHLC, volume 0, `high<low` ou `close` fora de [low, high].
+2. Retorno `r_t = ln(close_t / close_{t-1})` dentro do ticker.
+3. **Alvo:** `y_t = sqrt(252 · mean(r_{t+1..t+5}²))` (volatilidade anualizada, fração; 0,20 = 20% a.a.). Piso de 0,005 antes do log.
+4. Uma amostra em `t` exige a janela `[t-59, t+5]` contígua (nenhum salto > 5 dias corridos) e **nenhum |r| > 0,4** nela (artefatos de ação corporativa; descarta também 3 eventos reais, documentado).
+5. **Sem vazamento:** toda feature em `t` usa só dados até o fechamento de `t`.
+6. **Divisão cronológica** por data (todos os tickers juntos): 70% / 15% / 15% dos pregões, com **embargo (purge) de 5 pregões** em cada fronteira (o alvo olha 5 dias à frente). Nada de embaralhar entre períodos. O teste é tocado **uma vez**.
+7. **Novas instâncias:** os **5 últimos pregões** do dataset (sem alvo ainda, pois faltam os 5 dias futuros): previsões de verdade "fora da amostra" para ~12 tickers escolhidos por sorteio com seed fixa. Não pertencem ao teste (que termina em T−5).
+8. **Classes de regime (CNN):** tercis de `y` calculados **só no treino** → `baixa`, `media`, `alta`.
+
+### V4. Redes
+**`credit-default-mlp`** (classificação binária desbalanceada)
+- Campos crus da API: `limit_bal` (min 1), `education` (categórica `graduate`/`university`/`high_school`/`other`; códigos 0, 4, 5, 6 → `other`), `age`, `pay_1..pay_6` (−2..8), `bill_amt1..6`, `pay_amt1..6` (≥ 0). **`SEX` e `MARRIAGE` ficam fora das features** (princípio de não discriminação em crédito: a Regulation B/ECOA, nos EUA, proíbe sexo e estado civil como insumo; idade só em sistemas empiricamente derivados e sem penalizar idosos; LGPD art. 20 dá direito à revisão de decisões automatizadas, ⚠️ confirmar o texto no Planalto). Ficam guardadas só para o **diagnóstico de equidade** no teste.
+- Features: passthrough + one-hot de `education` + razão `bill_amt1 / limit_bal` (utilização). **Todo denominador de razão precisa de `minimum > 0`** (senão a API devolve 422 `zero_denominator`).
+- Rede: `Input(n)` → `Normalization` → `Dense(64, relu)` → `Dropout(0,2)` → `Dense(32, relu)` → `Dense(2, softmax)`; `categorical_crossentropy` com `class_weight`; Adam 1e-3. Ablação: largura × profundidade × 3 seeds, com/sem `class_weight`, por AUC-PR e F1 na validação.
+- Divisão: 70/15/15 **estratificada** e **sem duplicatas** (dedup antes do split). Reservar 20 linhas reais (10 por classe) como novas instâncias antes de tudo.
+- Métricas: matriz de confusão + `classification_report` (exigidos), **ROC-AUC, PR-AUC, estatística KS, Brier e calibração**; baselines (classe majoritária e regressão logística). **Limiar escolhido na validação** por custo (FN custa 5× FP: custo ilustrativo, a premissa fica explícita) e comparado ao 0,5. **Diagnóstico de equidade por `SEX` no teste** (taxa de aprovação e TPR por grupo, com a ressalva de que o dado é de Taiwan, 2005).
+
+**`volatility-mlp`** (regressão)
+- Campos crus (todos calculados no fechamento de `t`, ver V3.5): `ret_1d..ret_5d` (log-retornos defasados), `rv_5`, `rv_10`, `rv_20`, `rv_60` (volatilidade anualizada), `pk_5`, `pk_20` (Parkinson, com high/low), `range_5` (média de (high−low)/close), `volume_ratio` (volume ÷ média de 20 dias, min 1e-6), `log_dollar_volume`, `gap` (open ÷ close anterior − 1), `mom_20`, `mom_60`, `drawdown_60`, `mkt_rv_20` (volatilidade média do mercado, proxy tipo VIX calculada sobre os 505 tickers) e `dow` (categórica seg–sex). Razão `rv_5 / rv_20` (min de `rv_20` > 0). A API recebe **features já calculadas** (a engenharia de séries temporais é do chamador; escolha documentada em ADR).
+- Alvo: `ln(y)` padronizado no treino. Rede: `Input(n)` → `Normalization` → `Dense(64, relu)` → `Dense(32, relu)` → `Dense(1)`; o **clone de inferência** acrescenta `Normalization(invert=True)` → `Activation("exponential")`, devolvendo a volatilidade em fração a.a. (o contrato ganhou `ExpLayer`/`op: "exp"` para o fallback NumPy). Perda Huber (delta calibrado) **vs** MSE, comparadas; Adam 1e-3 + `ReduceLROnPlateau`.
+- Métricas (em unidades naturais, média do **teste**): RMSE, MAE, MAE/média, RMSE/média; extras: **QLIKE** (padrão em previsão de volatilidade) e R² no log. Baselines: média do treino, **persistência** (`rv_5`) e **HAR linear** (`ln rv_5`, `ln rv_20`, `ln rv_60`). Mostrar o erro por sub-período do teste (inclui a alta de jan–fev/2018) e por regime.
+
+**`candlestick-cnn`** (classificação de imagens, 3 classes)
+- Entrada: janela de **20 pregões** renderizada por rasterização determinística em NumPy (sem matplotlib, sem antialiasing), **64×64×3** (proposta: canal 0 = barras OHLC, canal 1 = média móvel de 20 dias, canal 2 = barras de volume; a escala vertical, fixa ou por janela, e a decisão final dos canais saem de um piloto curto e são justificadas no notebook). Formato aceito pela API: **só PNG** (JPEG destruiria o traço).
+- Rede (do zero, `tf.keras.layers`): `Input(64,64,3)` → `Rescaling(1/255)` → 3 blocos [`Conv2D` (+`BatchNormalization`) → `MaxPooling2D`] → `Flatten` → `Dense(64)` → `Dropout(0,5)` → `Dense(3, softmax)`; ~60 mil imagens de treino (amostragem com passo, no máximo ~1 GB de RAM em uint8); meta de ≤ 60 s por época na CPU.
+- Ablação de 4 configurações (base, + dropout, + augmentation leve que **não** quebra a semântica do gráfico, mais rasa). Métricas: acurácia (acaso = 33,3%), matriz de confusão, `classification_report`; **comparação com o baseline tabular** para o mesmo alvo de 3 classes.
+- Golden/API usam **gráficos sintéticos** (passeio aleatório geométrico), nunca imagens derivadas do CSV. `tools/render_chart.py` replica a função do notebook (teste de igualdade bit a bit no apêndice).
+
+### V5. Consequências para API, CI e docs
+- Nomes: `credit-default-mlp`, `volatility-mlp`, `candlestick-cnn` (substituem os antigos em dummies, testes, Makefile, smoke e docs).
+- **Contrato:** `ExpLayer` (`op: "exp"`) adicionado ao `contract/` e ao `NumpyMlpRuntime`. O gerador de dummies e o apêndice de exportação precisam suportá-lo.
+- Regressão devolve `value` e `unit` ("volatilidade anualizada (fração)"); classificação devolve rótulo e probabilidades; sem mudança de rota.
+- Model cards ganham a seção **"Considerações éticas e de uso"** (crédito: atributos protegidos, equidade, LGPD art. 20; mercado: vieses de sobrevivência e regime, não é recomendação).
+- Cronograma comprimido: **14/11** pivô + agentes; **15/11** freeze (notebook executado); **16–17/11** CD, docs e ensaio; **18/11** Restart & Run All, release; **19/11** entrega.
 > Versões verificadas em **09/11/2026** no PyPI (`pypi.org/pypi/<pkg>/json`) e na API de releases do GitHub. Itens que não puderam ser confirmados estão marcados **⚠️ não verificado** e viram tarefa de validação no dia 1.
 
 ---

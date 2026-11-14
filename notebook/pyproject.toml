@@ -1,7 +1,7 @@
 [project]
 name = "trinet-notebook"
 version = "1.0.0"
-description = "TriNet: notebook de treino das tres redes (Dry Bean, California Housing, Intel Scenes) - T2 CIC407. Projeto uv independente, fora do workspace da API."
+description = "TriNet: notebook de treino das tres redes de risco financeiro (inadimplencia de cartao, volatilidade de acoes, regime por grafico OHLC) - T2 CIC407. Projeto uv independente, fora do workspace da API. Uso educacional, nao e recomendacao de investimento."
 requires-python = ">=3.13,<3.14"
 license = "MIT"
 dependencies = [

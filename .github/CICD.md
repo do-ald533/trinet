@@ -8,7 +8,7 @@ All third-party actions are pinned to a full commit SHA with a `# vX.Y.Z` commen
 
 | File | Trigger | What it does |
 |---|---|---|
-| `workflows/ci.yml` | pull request, push to main | static (ruff, mypy, import-linter, deptry), tests + coverage >= 85%, contract-schema drift, artifact validation (`tools/check_artifacts.py`), actionlint, zizmor, OSV-Scanner, gitleaks, hadolint + `trivy config`, image build + boot smoke + Trivy image scan, SonarQube Cloud (advisory), notebook lint. `ci-gate` is the single required check. |
+| `workflows/ci.yml` | pull request, push to main | static (ruff, mypy, import-linter, deptry), tests + coverage >= 85%, contract-schema drift, artifact validation (`tools/check_artifacts.py`), actionlint, zizmor, OSV-Scanner, gitleaks, hadolint + `trivy config`, image build + boot smoke + Trivy image scan, free-flows check, notebook lint. `ci-gate` is the single required check. |
 | `workflows/cd.yml` | push to main, manual | build once, push to GHCR by digest, Trivy on the digest, CycloneDX SBOM, SLSA provenance + SBOM attestations, verify them, Testcontainers smoke on the digest, release gate, promote `latest` (and the version tag on a manual release). |
 | `workflows/security-weekly.yml` | Monday 05:17 UTC, manual | full OSV scan of both lockfiles, re-scan of published images with unfixed findings, Schemathesis fuzzing against a booted container, and a single rolling `security-weekly` issue (opened, commented, or closed). |
 | `dependabot.yml` | Dependabot | uv (root weekly, notebook monthly), docker, docker-compose, github-actions, pre-commit; 7-day cooldown on every ecosystem; security updates ignore the cooldown. |
@@ -27,15 +27,24 @@ zizmor, hadolint/Trivy) into annotations while a finding is triaged. `ci-gate` s
    makes it blocking.
 3. **Actions** (Settings > Actions > General): allow only GitHub-owned and verified actions, set the workflow token
    default to read-only, require approval for outside-collaborator runs. The workflows work with SHA-pinned actions only.
-4. **Variables** (Settings > Secrets and variables > Actions > Variables): `SECURITY_GATE` (`block` or `warn`),
-   `DHI_BASE_IMAGE`, `DHI_BUILD_IMAGE` (digest-pinned references printed by `make dhi-digests`; unset means the slim fallback).
-5. **Secrets**: `DHI_USERNAME` and `DHI_TOKEN` (read-only dhi.io token), also under **Dependabot** secrets so Dependabot
-   PRs can build on DHI; `SONAR_TOKEN` (SonarQube Cloud). Never commit them; the repository contains none.
+4. **Variables** (Settings > Secrets and variables > Actions > Variables): optionally `SECURITY_GATE` (`block` or
+   `warn`; unset means `block`). It is the only variable the workflows read.
+5. **Secrets**: none. No workflow reads a secret other than the built-in `GITHUB_TOKEN` (see "Free-only policy").
 6. **GHCR package**: after the first publish set the `trinet-api` package visibility (public for a public repo) and link
    it to the repository so `GITHUB_TOKEN` keeps push access.
-7. **Placeholders to replace**: the owner handle in `.github/CODEOWNERS`, and `sonar.organization` / `sonar.projectKey`
-   in `sonar-project.properties` (created at sonarcloud.io).
-8. **Local**: `docker login dhi.io`, `pip install pre-commit` (or `uvx prek install`), then `make tools` for the pinned CLIs.
+7. **Placeholder to replace**: the owner handle in `.github/CODEOWNERS`.
+8. **Local**: `pip install pre-commit` (or `uvx prek install`), then `make tools` for the pinned CLIs. No login is needed.
+
+## Free-only policy
+
+Every flow must run for free on a public repository, with no account, token or paid plan beyond the built-in
+`GITHUB_TOKEN` ([ADR 0012](../docs/adr/0012-fluxos-gratuitos-e-sem-credenciais.md)). `make free-flows` fails the build when
+a workflow reads a secret other than `GITHUB_TOKEN`, a variable other than `SECURITY_GATE`, logs in to a registry other
+than `ghcr.io`, runs on anything but a standard GitHub-hosted Ubuntu runner, names a service that needs an account or a
+plan (SonarQube/SonarCloud, Codecov, Snyk, dhi.io, ...), or when `deploy/compose.yaml` defaults to a base image that
+needs a login. To allow something new on purpose, change the ADR and the allow-lists in `tools/check_free_flows.py`
+in the same pull request. The one third-party service left is `step-security/harden-runner` in `cd.yml` (audit
+mode, community tier, no account); it only observes, so it can be removed without touching the pipeline.
 
 ## Gate policy
 
@@ -46,7 +55,7 @@ zizmor, hadolint/Trivy) into annotations while a finding is triaged. `ci-gate` s
 | OSV-Scanner (lockfile) | yes | no `uv.lock` support in GitHub dependency review, so OSV is the SCA gate |
 | gitleaks, hadolint, `trivy config` | yes | |
 | Trivy image scan (HIGH/CRITICAL, fixed only) | yes | exceptions go in `.trivyignore.yaml` with an expiry and a reason |
-| SonarQube Cloud | no | advisory; the Free plan's quality gate cannot be customised |
+| `free-flows` (`tools/check_free_flows.py`) | yes | runs in the `static` matrix; see the next section |
 | notebook lint | no | informational (TensorFlow stack is out of scope) |
 
 ## Release flow

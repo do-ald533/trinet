@@ -1,7 +1,8 @@
 """Pure-NumPy runtime for the tabular MLPs (rung 2 of the fallback ladder).
 
-Layers come from the manifest (``normalize`` / ``dense`` / ``denormalize``); weights come from
-an ``.npz`` loaded with ``allow_pickle=False``. All maths is float32, like the exported graph.
+Layers come from the manifest (``normalize`` / ``dense`` / ``denormalize`` / ``exp``); weights
+come from an ``.npz`` loaded with ``allow_pickle=False``. All maths is float32, like the exported
+graph.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from trinet_api.infrastructure.runtimes import (
     check_output,
     static_dims,
 )
-from trinet_contract import DenormalizeLayer, DenseLayer, NormalizeLayer, TensorSpec
+from trinet_contract import DenormalizeLayer, DenseLayer, ExpLayer, NormalizeLayer, TensorSpec
 from trinet_contract.manifest import MlpLayer
 
 # Keras ``Normalization`` divides by ``max(sqrt(variance), keras.backend.epsilon())``.
@@ -45,6 +46,12 @@ class _Denormalize:
 
     def __call__(self, x: _Matrix) -> _Matrix:
         return np.asarray(x * self.std + self.mean, dtype=np.float32)
+
+
+@dataclass(frozen=True, slots=True)
+class _Exp:
+    def __call__(self, x: _Matrix) -> _Matrix:
+        return np.asarray(np.exp(x), dtype=np.float32)
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +93,8 @@ def _std(variance: _Matrix) -> _Matrix:
 def _build_step(layer: MlpLayer, weights: np.lib.npyio.NpzFile, width: int) -> tuple[_Step, int]:
     """Return the step for ``layer`` and the feature width after it."""
     match layer:
+        case ExpLayer():
+            return _Exp(), width
         case NormalizeLayer(key=key) | DenormalizeLayer(key=key):
             mean = _array(weights, f"{key}.mean", 1)
             std = _std(_array(weights, f"{key}.variance", 1))

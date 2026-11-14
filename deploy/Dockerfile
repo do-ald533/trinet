@@ -2,19 +2,21 @@
 #
 # Multi-stage build following the official uv Docker guide
 # (https://docs.astral.sh/uv/guides/integration/docker/):
-#   1. `build`   - Docker Hardened Image "-dev" variant (shell + package tools), root.
+#   1. `build`   - the `slim` stage below (shell + package tools), root.
 #                  Installs the locked production dependencies of `trinet-api` into /app/.venv.
-#   2. `runtime` - Docker Hardened Image runtime variant (distroless-style, non-root 65532).
+#   2. `runtime` - the same `slim` stage with pip removed, running as non-root 65532.
 #                  Receives ONLY the virtualenv and the model artifacts (artifacts = last layer).
 #
-# Base images (PLANO §9, v1.1): `dhi.io` images need `docker login dhi.io` (done manually by the
-# maintainer; no credentials live in the repository). Without credentials, build with the pinned
-# slim fallback defined below - it is the stage named `slim`:
+# Base image (ADR 0012): every flow of the project is free and credential-free, so the default is
+# the official `python:3.13-slim-trixie` image pinned by digest (stage `slim`, below). Nothing needs
+# a login, a token or an account, in CI/CD or locally:
 #
-#   docker build -f deploy/Dockerfile --build-arg BASE_IMAGE=slim --build-arg BUILD_IMAGE=slim .
-#   # or: make build BASE=slim
+#   docker build -f deploy/Dockerfile .
+#   # or: make build
 #
-# Pin the DHI images by digest once logged in (`make dhi-digests` prints both references):
+# Optional, never used by CI/CD: any other base can be passed by reference, as long as BUILD_IMAGE
+# and BASE_IMAGE are the same OS/Python build. A Docker Hardened Images example (free Docker
+# account, `docker login dhi.io`; `make dhi-digests` prints digest-pinned references):
 #
 #   --build-arg BASE_IMAGE=dhi.io/python:3.13@sha256:<digest>
 #   --build-arg BUILD_IMAGE=dhi.io/python:3.13-dev@sha256:<digest>
@@ -22,22 +24,21 @@
 # Both stages must come from the same OS/Python build so the interpreter path recorded in the
 # virtualenv (/app/.venv/bin/python -> system python) is identical in the runtime image.
 
-ARG BASE_IMAGE=dhi.io/python:3.13
-ARG BUILD_IMAGE=dhi.io/python:3.13-dev
+ARG BASE_IMAGE=slim
+ARG BUILD_IMAGE=slim
 
 # uv binary, pinned by digest (multi-arch index of ghcr.io/astral-sh/uv:0.13.7).
 FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
 
-# Fallback base for both stages (Debian 13 "trixie", Python 3.13), pinned by digest. It is a
-# named stage so `--build-arg BASE_IMAGE=slim` resolves to it without any registry round trip and
-# so Dependabot (docker ecosystem) keeps the digest fresh.
+# Default base for both stages (Debian 13 "trixie", Python 3.13), pinned by digest. It is a named
+# stage so `BASE_IMAGE=slim` resolves to it without any registry round trip and so Dependabot
+# (docker ecosystem) keeps the digest fresh.
 FROM python:3.13-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS slim
-# - DHI images ship no pip; drop it here too (not needed at run time, and its vendored
-#   urllib3/msgpack copies only add scanner findings and attack surface). uv installs the project
-#   into its own venv and never needs pip.
-# - Apply Debian security updates published after the pinned digest (the fallback must not block CI
-#   on an already-fixed distro CVE while the upstream image catches up). The pinned DHI path needs
-#   neither step. Not byte-reproducible by design; the supported production base is DHI.
+# - Drop pip: not needed at run time, and its vendored urllib3/msgpack copies only add scanner
+#   findings and attack surface. uv installs the project into its own venv and never needs pip.
+# - Apply Debian security updates published after the pinned digest (the pipeline must not block on
+#   an already-fixed distro CVE while the upstream image catches up). Not byte-reproducible by
+#   design; the pinned digest and the Trivy gate bound the drift.
 # hadolint ignore=DL3005
 RUN set -eux; \
     python -m pip --disable-pip-version-check uninstall --yes pip setuptools wheel; \
@@ -112,14 +113,14 @@ COPY --from=build /app/.venv /app/.venv
 # Model artifacts go last: they change with every notebook export, the venv does not.
 COPY artifacts/ /app/artifacts/
 
-# Numeric uid:gid = the DHI `nonroot` user (65532). Numeric so it also works on the slim fallback,
-# which has no such account. The container filesystem is read-only; /tmp is a tmpfs (compose).
+# Numeric uid:gid 65532 (the `nonroot` convention of distroless/hardened images). Numeric because the
+# slim base has no such account. The container filesystem is read-only; /tmp is a tmpfs (compose).
 USER 65532:65532
 
 # 8000 = public API. The Prometheus port (9100) is deliberately NOT exposed or published.
 EXPOSE 8000
 
-# stdlib-only probe of /health/live (no curl/wget in a hardened image).
+# stdlib-only probe of /health/live (no curl/wget needed).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["python", "-m", "trinet_api.healthcheck"]
 

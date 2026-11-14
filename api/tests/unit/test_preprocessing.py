@@ -27,21 +27,46 @@ from trinet_contract import (
     TabularInput,
 )
 
-HOUSING = dummy.housing_spec()
-DRYBEAN = dummy.drybean_spec()
+VOL = dummy.volatility_spec()
+CREDIT = dummy.credit_spec()
+# The dummy specs impute nothing, so imputation gets a spec of its own.
+IMPUTING = TabularInput(
+    fields=(
+        NumericField(name="a", minimum=0.0, maximum=10.0, impute=5.0),
+        NumericField(name="b", minimum=1.0),
+        CategoricalField(name="c", vocabulary=("x", "y")),
+    ),
+    features=(
+        PassthroughFeature(source="a"),
+        OneHotFeature(source="c"),
+        RatioFeature(name="a_over_b", numerator="a", denominator="b"),
+    ),
+)
+VOL_NUMERIC_COUNT = len(dummy.VOL_NUMERIC)  # 19 passthrough columns before the one-hot block
 
 
-def housing_record(**overrides: object) -> dict[str, object]:
+def vol_record(**overrides: object) -> dict[str, object]:
     record: dict[str, object] = {
-        "longitude": -122.2,
-        "latitude": 37.8,
-        "housing_median_age": 30.0,
-        "total_rooms": 880.0,
-        "total_bedrooms": 129.0,
-        "population": 322.0,
-        "households": 126.0,
-        "median_income": 8.3,
-        "ocean_proximity": "NEAR BAY",
+        "ret_1d": 0.004,
+        "ret_2d": -0.012,
+        "ret_3d": 0.001,
+        "ret_4d": 0.007,
+        "ret_5d": -0.003,
+        "rv_5": 0.21,
+        "rv_10": 0.19,
+        "rv_20": 0.25,
+        "rv_60": 0.27,
+        "pk_5": 0.2,
+        "pk_20": 0.22,
+        "range_5": 0.015,
+        "volume_ratio": 1.1,
+        "log_dollar_volume": 18.4,
+        "gap": 0.002,
+        "mom_20": 0.03,
+        "mom_60": 0.08,
+        "drawdown_60": -0.05,
+        "mkt_rv_20": 0.13,
+        "dow": "wed",
     }
     record.update(overrides)
     return record
@@ -57,74 +82,94 @@ def issues_of(spec: TabularInput, record: dict[str, object]) -> dict[tuple[str |
 
 
 def test_to_vector_applies_the_three_primitives() -> None:
-    vector = to_vector(housing_record(), HOUSING)
+    record = vol_record()
+    vector = to_vector(record, VOL)
     assert vector.dtype == np.float32
-    assert vector.shape == (HOUSING.width,) == (15,)
-    assert vector[:8].tolist() == pytest.approx(
-        [-122.2, 37.8, 30.0, 880.0, 129.0, 322.0, 126.0, 8.3], rel=1e-6
-    )
-    # one-hot in vocabulary order: <1H OCEAN, INLAND, ISLAND, NEAR BAY, NEAR OCEAN
-    assert vector[8:13].tolist() == [0.0, 0.0, 0.0, 1.0, 0.0]
-    assert vector[13] == pytest.approx(880.0 / 126.0, rel=1e-6)
-    assert vector[14] == pytest.approx(322.0 / 126.0, rel=1e-6)
+    assert vector.shape == (VOL.width,) == (25,)
+    numeric = [float(record[name]) for name in dummy.VOL_NUMERIC]  # type: ignore[arg-type]
+    assert vector[:VOL_NUMERIC_COUNT].tolist() == pytest.approx(numeric, rel=1e-6)
+    # one-hot in vocabulary order: mon, tue, wed, thu, fri
+    assert vector[VOL_NUMERIC_COUNT : VOL_NUMERIC_COUNT + 5].tolist() == [0.0, 0.0, 1.0, 0.0, 0.0]
+    assert vector[-1] == pytest.approx(0.21 / 0.25, rel=1e-6)  # rv_5 / rv_20
 
 
-@pytest.mark.parametrize("bedrooms", [None, "missing"])
-def test_null_or_missing_is_imputed_when_the_field_has_impute(bedrooms: object) -> None:
-    record = housing_record(total_bedrooms=bedrooms)
-    if bedrooms == "missing":
-        del record["total_bedrooms"]
-    assert to_vector(record, HOUSING)[4] == pytest.approx(dummy.BEDROOMS_IMPUTE)
+def test_the_credit_spec_ends_with_one_hot_education_and_utilisation() -> None:
+    record = dict.fromkeys(dummy.CREDIT_NUMERIC, 1.0) | {"education": "high_school"}
+    record["limit_bal"], record["bill_amt1"], record["age"] = 20000.0, 5000.0, 30.0
+    vector = to_vector(record, CREDIT)
+    assert vector.shape == (CREDIT.width,) == (25,)
+    assert vector[20:24].tolist() == [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+    ]  # graduate, university, high_school, other
+    assert vector[24] == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize("value", [None, "missing"])
+def test_null_or_missing_is_imputed_when_the_field_has_impute(value: object) -> None:
+    record: dict[str, object] = {"a": value, "b": 2.0, "c": "x"}
+    if value == "missing":
+        del record["a"]
+    vector = to_vector(record, IMPUTING)
+    assert vector[0] == 5.0
+    assert vector[3] == pytest.approx(2.5)  # the imputed value feeds the ratio too
 
 
 def test_null_is_rejected_without_impute_and_missing_is_distinguished() -> None:
-    nulled = issues_of(HOUSING, housing_record(median_income=None))
-    assert nulled == {("median_income",): "null_not_allowed"}
-    record = housing_record()
-    del record["median_income"]
-    assert issues_of(HOUSING, record) == {("median_income",): "required"}
+    nulled = issues_of(VOL, vol_record(rv_5=None))
+    assert nulled == {("rv_5",): "null_not_allowed"}
+    record = vol_record()
+    del record["rv_5"]
+    assert issues_of(VOL, record) == {("rv_5",): "required"}
 
 
 def test_unknown_fields_are_rejected() -> None:
-    assert issues_of(HOUSING, housing_record(extra=1)) == {("extra",): "unknown_field"}
+    assert issues_of(VOL, vol_record(extra=1)) == {("extra",): "unknown_field"}
 
 
 @pytest.mark.parametrize(
     ("value", "code"),
     [
         (-1000.0, "below_minimum"),
-        (-130.0, "below_minimum"),
-        (-90.0, "above_maximum"),
+        (-0.5, "below_minimum"),
+        (0.5, "above_maximum"),
         (math.nan, "type_error"),
         (math.inf, "type_error"),
         (-math.inf, "type_error"),
-        ("12", "type_error"),
+        ("0.01", "type_error"),
         (True, "type_error"),
-        ([1.0], "type_error"),
+        ([0.01], "type_error"),
         (10**400, "type_error"),
         (1e300, "out_of_range"),
     ],
 )
 def test_numeric_validation(value: object, code: str) -> None:
-    assert issues_of(HOUSING, housing_record(longitude=value)) == {("longitude",): code}
+    assert issues_of(VOL, vol_record(ret_1d=value)) == {("ret_1d",): code}
 
 
 def test_numeric_upper_bound_and_integer_acceptance() -> None:
-    assert issues_of(HOUSING, housing_record(latitude=99)) == {("latitude",): "above_maximum"}
-    assert to_vector(housing_record(latitude=40), HOUSING)[1] == 40.0  # int is a valid number
+    assert issues_of(VOL, vol_record(volume_ratio=2000)) == {("volume_ratio",): "above_maximum"}
+    assert to_vector(vol_record(volume_ratio=2), VOL)[12] == 2.0  # int is a valid number
 
 
-@pytest.mark.parametrize("value", ["Mars", "", 3, None])
+@pytest.mark.parametrize("value", ["sat", "", 3, None, "WED"])
 def test_categorical_must_be_in_vocabulary(value: object) -> None:
-    issues = issues_of(HOUSING, housing_record(ocean_proximity=value))
-    assert list(issues) == [("ocean_proximity",)]
+    issues = issues_of(VOL, vol_record(dow=value))
+    assert list(issues) == [("dow",)]
+
+
+def test_ratio_denominators_have_a_positive_minimum_so_zero_is_a_422() -> None:
+    assert issues_of(VOL, vol_record(rv_20=0.0)) == {("rv_20",): "below_minimum"}
+    record = dict.fromkeys(dummy.CREDIT_NUMERIC, 1.0) | {"education": "other", "age": 30.0}
+    record["limit_bal"] = 0.0
+    assert issues_of(CREDIT, record) == {("limit_bal",): "below_minimum"}
 
 
 def test_error_messages_never_echo_the_value() -> None:
     with pytest.raises(InvalidInput) as info:
-        to_vector(
-            housing_record(ocean_proximity="SECRET-VALUE-123", longitude="SECRET-NUM"), HOUSING
-        )
+        to_vector(vol_record(dow="SECRET-VALUE-123", ret_1d="SECRET-NUM"), VOL)
     text = " ".join(f"{i.code} {i.message}" for i in info.value.issues)
     assert "SECRET" not in text
 
@@ -140,28 +185,28 @@ def test_zero_denominator_and_ratio_overflow() -> None:
 
 
 def test_to_matrix_validates_every_row_and_reports_the_index() -> None:
-    rows = [housing_record(), housing_record(latitude=99), "not-an-object", housing_record()]
+    rows = [vol_record(), vol_record(ret_1d=0.9), "not-an-object", vol_record()]
     with pytest.raises(InvalidInput) as info:
-        to_matrix(rows, HOUSING, max_batch=10)
+        to_matrix(rows, VOL, max_batch=10)
     assert {(i.loc, i.code) for i in info.value.issues} == {
-        (("instances", 1, "latitude"), "above_maximum"),
+        (("instances", 1, "ret_1d"), "above_maximum"),
         (("instances", 2), "type_error"),
     }
 
 
 def test_to_matrix_shape_and_batch_limits() -> None:
-    matrix = to_matrix([housing_record()] * 3, HOUSING, max_batch=3)
-    assert matrix.shape == (3, 15)
+    matrix = to_matrix([vol_record()] * 3, VOL, max_batch=3)
+    assert matrix.shape == (3, 25)
     assert matrix.dtype == np.float32
     with pytest.raises(InvalidInput, match="1 validation"):
-        to_matrix([housing_record()] * 4, HOUSING, max_batch=3)
+        to_matrix([vol_record()] * 4, VOL, max_batch=3)
     with pytest.raises(InvalidInput):
-        to_matrix([], HOUSING, max_batch=3)
+        to_matrix([], VOL, max_batch=3)
 
 
 def test_issue_list_is_capped() -> None:
     with pytest.raises(InvalidInput) as info:
-        to_matrix([{}] * 100, DRYBEAN, max_batch=100)
+        to_matrix([{}] * 100, CREDIT, max_batch=100)
     assert len(info.value.issues) == MAX_ISSUES
 
 
@@ -267,3 +312,11 @@ def test_size_limits() -> None:
     with pytest.raises(InvalidInput) as info:
         decode_image(encode(solid((400, 400)), "PNG"), IMAGE, max_pixels=100_000)
     assert "pixels" in info.value.issues[0].message
+
+
+def test_png_only_manifests_refuse_jpeg_and_webp() -> None:
+    png_only = ImageInput(height=64, width=64, formats=("PNG",))
+    assert decode_image(encode(solid((64, 64)), "PNG"), png_only).shape == (64, 64, 3)
+    for fmt in ("JPEG", "WEBP"):
+        with pytest.raises(UnsupportedInput, match="PNG"):
+            decode_image(encode(solid((64, 64)), fmt), png_only)

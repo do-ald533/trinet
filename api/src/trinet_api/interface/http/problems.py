@@ -12,7 +12,6 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field
-from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse, Response
 
@@ -160,18 +159,6 @@ def _unauthorized(request: Request, _exc: Exception) -> Response:
     )
 
 
-def _rate_limited(request: Request, exc: Exception) -> Response:
-    assert isinstance(exc, RateLimitExceeded)  # noqa: S101 - registered for it only
-    window = exc.limit.limit.get_expiry() if exc.limit is not None else 60
-    return problem_response(
-        429,
-        "rate_limited",
-        detail="Rate limit exceeded.",
-        request=request,
-        headers={"Retry-After": str(window)},
-    )
-
-
 def _http_exception(request: Request, exc: Exception) -> Response:
     assert isinstance(exc, StarletteHTTPException)  # noqa: S101 - registered for it only
     code = {404: "not_found", 405: "method_not_allowed"}.get(
@@ -211,6 +198,5 @@ def _validation_error(request: Request, exc: Exception) -> Response:
 def register_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(TriNetError, _domain_error)
     app.add_exception_handler(Unauthorized, _unauthorized)
-    app.add_exception_handler(RateLimitExceeded, _rate_limited)
     app.add_exception_handler(StarletteHTTPException, _http_exception)
     app.add_exception_handler(RequestValidationError, _validation_error)
