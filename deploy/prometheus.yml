@@ -1,0 +1,20 @@
+# Prometheus configuration for the `observability` compose profile.
+# Scrapes the API's internal metrics port (TRINET_METRICS_PORT=9100, not published to the host).
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+  external_labels:
+    environment: local
+
+scrape_configs:
+  - job_name: trinet-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:9100"]
+        labels:
+          service: trinet-api
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

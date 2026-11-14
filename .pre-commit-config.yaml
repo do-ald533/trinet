@@ -1,0 +1,72 @@
+# Local hooks - compatible with prek (https://github.com/j178/prek, `uv tool install prek`) and
+# pre-commit. Install once with:  prek install   (or: pre-commit install)
+# Revisions are pinned to full commit SHAs (the `# frozen:` comment is the tag); Dependabot's
+# `pre-commit` ecosystem proposes new ones. hadolint and gitleaks run the SAME pinned, checksum-verified
+# binaries as CI: install them with `make tools` (puts them in ~/.local/bin).
+minimum_pre_commit_version: "3.2.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: check-added-large-files
+        # Matches the per-file limit of tools/check_artifacts.py (20 MiB); the CNN ONNX is ~8 MiB.
+        args: [--maxkb=20480]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: c0f278f1254ccc8fb09676bcdb8d847e7db493e5 # frozen: v0.17.4
+    hooks:
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
+        # The notebook is linted separately (nbQA, syntax + pyflakes only) and excluded in pyproject.
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: d1df990f871e616da38bb602a2671d5e840b9989 # frozen: 0.13.7
+    hooks:
+      - id: uv-lock
+        name: uv lock --check (root workspace)
+        args: [--check]
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: 06a39750ec31860bb44f2acf67182c40016cd1e7 # frozen: v1.32.0
+    hooks:
+      - id: zizmor
+        args: [--offline, --persona=regular, --min-severity=low]
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: 2eece55955ced00200be9729e9728cb7dacca505 # frozen: v2.15.1
+    hooks:
+      - id: hadolint # language: system -> needs `make tools`
+        args: [--config, .hadolint.yaml]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1
+    hooks:
+      - id: gitleaks-system # language: system -> needs `make tools`
+        pass_filenames: false # the upstream definition omits it; gitleaks takes at most one arg
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy --strict (contract, api, tools)
+        entry: uv run --all-packages --all-extras mypy contract api tools
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+      - id: uv-lock-notebook
+        name: uv lock --check (notebook project)
+        entry: uv lock --check --directory notebook
+        language: system
+        files: ^notebook/(pyproject\.toml|uv\.lock)$
+        pass_filenames: false

@@ -1,0 +1,243 @@
+{
+  "schema_version": "1.0",
+  "name": "housing-mlp",
+  "version": "0.0.0-dummy",
+  "status": "dummy",
+  "task": "regression",
+  "description": "DUMMY California Housing regressor (median house value, USD); random weights.",
+  "created_at": "2026-11-10T00:00:00Z",
+  "git_sha": null,
+  "input": {
+    "kind": "tabular",
+    "fields": [
+      {
+        "kind": "numeric",
+        "name": "longitude",
+        "description": "",
+        "impute": null,
+        "minimum": -125.0,
+        "maximum": -114.0
+      },
+      {
+        "kind": "numeric",
+        "name": "latitude",
+        "description": "",
+        "impute": null,
+        "minimum": 32.0,
+        "maximum": 42.0
+      },
+      {
+        "kind": "numeric",
+        "name": "housing_median_age",
+        "description": "",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 100.0
+      },
+      {
+        "kind": "numeric",
+        "name": "total_rooms",
+        "description": "",
+        "impute": null,
+        "minimum": 1.0,
+        "maximum": 100000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "total_bedrooms",
+        "description": "",
+        "impute": 435.0,
+        "minimum": 1.0,
+        "maximum": 20000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "population",
+        "description": "",
+        "impute": null,
+        "minimum": 1.0,
+        "maximum": 100000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "households",
+        "description": "",
+        "impute": null,
+        "minimum": 1.0,
+        "maximum": 20000.0
+      },
+      {
+        "kind": "numeric",
+        "name": "median_income",
+        "description": "",
+        "impute": null,
+        "minimum": 0.0,
+        "maximum": 20.0
+      },
+      {
+        "kind": "categorical",
+        "name": "ocean_proximity",
+        "description": "",
+        "vocabulary": [
+          "<1H OCEAN",
+          "INLAND",
+          "ISLAND",
+          "NEAR BAY",
+          "NEAR OCEAN"
+        ],
+        "impute": null
+      }
+    ],
+    "features": [
+      {
+        "kind": "passthrough",
+        "source": "longitude"
+      },
+      {
+        "kind": "passthrough",
+        "source": "latitude"
+      },
+      {
+        "kind": "passthrough",
+        "source": "housing_median_age"
+      },
+      {
+        "kind": "passthrough",
+        "source": "total_rooms"
+      },
+      {
+        "kind": "passthrough",
+        "source": "total_bedrooms"
+      },
+      {
+        "kind": "passthrough",
+        "source": "population"
+      },
+      {
+        "kind": "passthrough",
+        "source": "households"
+      },
+      {
+        "kind": "passthrough",
+        "source": "median_income"
+      },
+      {
+        "kind": "one_hot",
+        "source": "ocean_proximity"
+      },
+      {
+        "kind": "ratio",
+        "name": "rooms_per_household",
+        "numerator": "total_rooms",
+        "denominator": "households"
+      },
+      {
+        "kind": "ratio",
+        "name": "population_per_household",
+        "numerator": "population",
+        "denominator": "households"
+      }
+    ]
+  },
+  "output": {
+    "kind": "regression",
+    "target": "median_house_value",
+    "unit": "USD"
+  },
+  "inputs": [
+    {
+      "name": "inputs",
+      "dtype": "float32",
+      "shape": [
+        null,
+        15
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "output_0",
+      "dtype": "float32",
+      "shape": [
+        null,
+        1
+      ]
+    }
+  ],
+  "runtimes": [
+    {
+      "kind": "onnx",
+      "file": "model.onnx",
+      "sha256": "5678d2a80556487aad702fea174c846d5e56dd769f015a9e2ef74c9826a36670",
+      "opset": 17
+    },
+    {
+      "kind": "numpy_mlp",
+      "file": "weights.npz",
+      "sha256": "e18b8933bc36c07bc18473dc396a68656eb899fc3b050308ba6ef3299e181be8",
+      "layers": [
+        {
+          "op": "normalize",
+          "key": "norm"
+        },
+        {
+          "op": "dense",
+          "key": "d0",
+          "activation": "relu"
+        },
+        {
+          "op": "dense",
+          "key": "d1",
+          "activation": "relu"
+        },
+        {
+          "op": "dense",
+          "key": "out",
+          "activation": "linear"
+        },
+        {
+          "op": "denormalize",
+          "key": "target"
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "validation": {
+      "rmse": 27109.088641701117,
+      "mae": 23418.100605456984,
+      "mae_over_mean": 0.10076681669191215
+    },
+    "test": {
+      "rmse": 27109.088641701117,
+      "mae": 23418.100605456984,
+      "mae_over_mean": 0.10076681669191215
+    }
+  },
+  "quality_gate": {
+    "metric": "rmse",
+    "split": "validation",
+    "threshold": 33886.36080212639,
+    "value": 27109.088641701117,
+    "higher_is_better": false
+  },
+  "serving_skew": {
+    "samples": 24,
+    "max_abs_diff": 0.0,
+    "top1_agreement": null,
+    "accuracy_delta_pp": null
+  },
+  "training": {
+    "dataset": "synthetic (dummy artifact for housing-mlp)",
+    "data_sha256": "128b769e848b0b00ec47f0cddf94cfc8e6855f390aa90e0174d2704b135c1bb9",
+    "seed": 0,
+    "python": "3.13",
+    "tensorflow": "none (dummy)",
+    "keras": "none (dummy)",
+    "hardware": ""
+  },
+  "golden": {
+    "file": "golden.json",
+    "sha256": "e292390b2d64a8d3f21b469dc8a39876e8140ea6baf3a8c28d3e72feb16a7990"
+  }
+}

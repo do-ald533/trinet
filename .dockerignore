@@ -1,0 +1,47 @@
+# Allow-list build context: deny everything, then re-allow only what the image needs
+# (deploy/Dockerfile copies: root lock + pyproject, contract/, api/, artifacts/).
+*
+
+!pyproject.toml
+!uv.lock
+!contract/
+!api/
+!artifacts/
+
+# --- explicit denials (defence in depth: these win over the allow-list above) ---
+# Notebook project, datasets, training state, Keras/Pickle model formats (never deserialised by the API)
+notebook
+**/data
+**/mlruns
+**/*.keras
+**/*.h5
+**/*.pkl
+**/*.pickle
+**/*.joblib
+
+# Tests, caches, virtualenvs, docs, tooling, VCS
+**/tests
+**/conftest.py
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.hypothesis
+**/.coverage*
+**/coverage.xml
+**/htmlcov
+.git
+.github
+deploy
+docs
+tools
+
+# Secrets and local environment
+secrets
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/kaggle.json

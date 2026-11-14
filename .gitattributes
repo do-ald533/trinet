@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.onnx binary
+*.npz binary
+*.tflite binary
+*.png binary
+*.jpg binary
+uv.lock linguist-generated=true
+contract/schema/*.json linguist-generated=true

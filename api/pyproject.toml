@@ -1,0 +1,41 @@
+[project]
+name = "trinet-api"
+version = "0.1.0"
+description = "TriNet inference API (FastAPI + ONNX Runtime), driven by artifact manifests."
+requires-python = ">=3.13,<3.14"
+license = "MIT"
+dependencies = [
+    "trinet-contract",
+    "fastapi>=0.162.2",
+    "starlette>=1.10.0",
+    "uvicorn>=0.54.0",
+    "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.2",
+    "onnxruntime>=1.31.1",
+    "numpy>=2.5.4",
+    "pillow>=13.0.0",
+    "python-multipart>=0.0.33",
+    "structlog>=26.1.0",
+    "prometheus-client>=0.26.0",
+    "slowapi>=0.1.10",
+    "limits>=3.13.0",
+]
+
+[project.optional-dependencies]
+# Last rung of the fallback ladder (CNN). Imported lazily, only if a manifest asks for it.
+litert = ["ai-edge-litert>=2.3.0"]
+
+[tool.uv.sources]
+trinet-contract = { workspace = true }
+
+# Run from this directory: `cd api && uv run deptry src` (deptry reads the cwd's pyproject).
+[tool.deptry]
+known_first_party = ["trinet_api"]
+
+[tool.deptry.per_rule_ignores]
+# Starlette imports python-multipart itself (as `multipart`) when parsing form data.
+DEP002 = ["python-multipart"]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14"]
+build-backend = "uv_build"

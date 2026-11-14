@@ -1,0 +1,24 @@
+# Gitleaks configuration (CI: `gitleaks git` over the full history; local: `make scan`, pre-commit).
+title = "TriNet gitleaks config"
+
+[extend]
+# Keep every rule of the pinned gitleaks release (v8.30.1) and only add narrow allowlists.
+useDefault = true
+
+[[allowlists]]
+description = "Local virtual environments are never committed; they only matter for `gitleaks dir`."
+paths = ['''(^|/)\.venv/''']
+
+[[allowlists]]
+description = "Deterministic fake API key used by the API test-suite (not a credential)."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^api/tests/''']
+regexes = ['''test-api-key-0123456789abcdef''']
+
+[[allowlists]]
+description = "SonarQube organization/project keys are public project coordinates. Java properties files cannot carry an inline gitleaks:allow comment."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^sonar-project\.properties$''']
+regexes = ['''^sonar\.(organization|projectKey|projectName)=''']

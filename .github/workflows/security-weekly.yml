@@ -1,0 +1,161 @@
+# Weekly deep security scan (PLANO §8.3). NEVER blocks anything: when a job fails it opens (or
+# comments on) one `security-weekly` issue; when everything is green again it closes it.
+#   - OSV-Scanner over BOTH lock files (the root production lock and the notebook's TensorFlow lock)
+#   - Trivy re-scan of the published image and of the observability images, WITHOUT --ignore-unfixed
+#   - long black-box Schemathesis run against the published image
+name: Security (weekly)
+
+on:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: security-weekly
+  cancel-in-progress: false
+
+env:
+  UV_VERSION: "0.13.7"
+  UV_NO_PROGRESS: "1"
+
+jobs:
+  osv-full:
+    name: OSV-Scanner (root + notebook locks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install OSV-Scanner (pinned, checksum-verified)
+        run: .github/scripts/install-cli.sh osv-scanner
+      - name: Scan uv.lock and notebook/uv.lock
+        run: osv-scanner scan source --lockfile uv.lock --lockfile notebook/uv.lock --format table
+
+  image-rescan:
+    name: Trivy re-scan (published + observability images)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # checkout (compose file)
+      packages: read # pull the published image from GHCR
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Install Trivy (pinned, checksum-verified)
+        run: .github/scripts/install-cli.sh trivy
+      - name: Scan the images (HIGH/CRITICAL, including unfixed)
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -uo pipefail
+          image="ghcr.io/${OWNER,,}/trinet-api"
+          targets=()
+          # Published candidate for the current main commit, and the promoted release if any.
+          for ref in "$image:sha-${GITHUB_SHA::12}" "$image:latest"; do
+            if docker buildx imagetools inspect "$ref" >/dev/null 2>&1; then
+              targets+=("$ref")
+            else
+              echo "::notice title=not published::$ref does not exist (yet); skipping"
+            fi
+          done
+          # Third-party images of the observability profile (pinned by digest in compose.yaml).
+          while IFS= read -r ref; do
+            case "$ref" in
+              "" | trinet-api:*) ;;
+              *) targets+=("$ref") ;;
+            esac
+          done < <(docker compose -f deploy/compose.yaml --profile observability config --images | sort -u)
+
+          failed=0
+          for ref in "${targets[@]}"; do
+            echo "::group::trivy $ref"
+            trivy image --image-src remote --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+              --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --skip-java-db-update \
+              --ignorefile .trivyignore.yaml --no-progress "$ref" || failed=1
+            echo "::endgroup::"
+          done
+          exit "$failed"
+
+  schemathesis-long:
+    name: Schemathesis (long, black-box)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read # checkout (smoke script)
+      packages: read # pull the published image from GHCR
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Fuzz the published image
+        env:
+          OWNER: ${{ github.repository_owner }}
+          TRINET_RATE_LIMIT: 1000000/minute # the production limit (60/min) would only measure 429s
+        run: |
+          set -euo pipefail
+          ref="ghcr.io/${OWNER,,}/trinet-api:sha-${GITHUB_SHA::12}"
+          if ! docker pull "$ref"; then
+            echo "::notice title=not published::$ref does not exist yet; nothing to fuzz"
+            exit 0
+          fi
+          # The helper boots the image hardened, checks readiness/auth, then runs the command below
+          # with TRINET_BASE_URL and TRINET_API_KEY exported.
+          .github/scripts/smoke-image.sh "$ref" -- .github/scripts/schemathesis-run.sh
+
+  report:
+    name: open / update / close the issue
+    if: ${{ always() }}
+    needs: [osv-full, image-rescan, schemathesis-long]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write # create, comment on and close the tracking issue
+    steps:
+      - name: Maintain the security-weekly issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          label="security-weekly"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          failed="$(echo "$NEEDS" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "- `\(.key)`: \(.value.result)"')"
+          gh label create "$label" --color B60205 --description "Findings from security-weekly.yml" --force >/dev/null
+          number="$(gh issue list --label "$label" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$failed" ]; then
+            body="$(printf 'Weekly security scan found problems (run %s):\n\n%s\n\nOpen the run logs for the findings. This issue is closed automatically when a later run is green.' "$run_url" "$failed")"
+            if [ -n "$number" ]; then
+              gh issue comment "$number" --body "$body"
+            else
+              gh issue create --title "Weekly security scan: findings" --label "$label" --body "$body"
+            fi
+          elif [ -n "$number" ]; then
+            gh issue close "$number" --comment "The weekly scan is green again: $run_url"
+          fi

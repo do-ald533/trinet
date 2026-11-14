@@ -1,0 +1,242 @@
+{
+  "$defs": {
+    "GoldenTolerance": {
+      "additionalProperties": false,
+      "properties": {
+        "features_atol": {
+          "default": 1e-06,
+          "minimum": 0,
+          "title": "Features Atol",
+          "type": "number"
+        },
+        "output_atol": {
+          "default": 0.0001,
+          "minimum": 0,
+          "title": "Output Atol",
+          "type": "number"
+        },
+        "top1_margin": {
+          "default": 0.001,
+          "minimum": 0,
+          "title": "Top1 Margin",
+          "type": "number"
+        }
+      },
+      "title": "GoldenTolerance",
+      "type": "object"
+    },
+    "ImageGolden": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/ImageGoldenCase"
+          },
+          "minItems": 1,
+          "title": "Cases",
+          "type": "array"
+        },
+        "directory": {
+          "default": "golden",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$",
+          "title": "Directory",
+          "type": "string"
+        },
+        "kind": {
+          "const": "image",
+          "default": "image",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "tolerance": {
+          "$ref": "#/$defs/GoldenTolerance",
+          "default": {
+            "features_atol": 1e-06,
+            "output_atol": 0.001,
+            "top1_margin": 0.001
+          }
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "version",
+        "cases"
+      ],
+      "title": "ImageGolden",
+      "type": "object"
+    },
+    "ImageGoldenCase": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$",
+          "title": "File",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "output": {
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Output",
+          "type": "array"
+        }
+      },
+      "required": [
+        "file",
+        "output"
+      ],
+      "title": "ImageGoldenCase",
+      "type": "object"
+    },
+    "TabularGolden": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/TabularGoldenCase"
+          },
+          "minItems": 1,
+          "title": "Cases",
+          "type": "array"
+        },
+        "kind": {
+          "const": "tabular",
+          "default": "tabular",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "tolerance": {
+          "$ref": "#/$defs/GoldenTolerance",
+          "default": {
+            "features_atol": 1e-06,
+            "output_atol": 0.0001,
+            "top1_margin": 0.001
+          }
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "version",
+        "cases"
+      ],
+      "title": "TabularGolden",
+      "type": "object"
+    },
+    "TabularGoldenCase": {
+      "additionalProperties": false,
+      "properties": {
+        "features": {
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Features",
+          "type": "array"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "output": {
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Output",
+          "type": "array"
+        },
+        "record": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Record",
+          "type": "object"
+        }
+      },
+      "required": [
+        "record",
+        "features",
+        "output"
+      ],
+      "title": "TabularGoldenCase",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "image": "#/$defs/ImageGolden",
+      "tabular": "#/$defs/TabularGolden"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/TabularGolden"
+    },
+    {
+      "$ref": "#/$defs/ImageGolden"
+    }
+  ]
+}

@@ -1,0 +1,974 @@
+{
+  "$defs": {
+    "CategoricalField": {
+      "additionalProperties": false,
+      "description": "Raw categorical request field with a closed vocabulary (fitted on the training split).",
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "impute": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Impute"
+        },
+        "kind": {
+          "const": "categorical",
+          "default": "categorical",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "vocabulary": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Vocabulary",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "vocabulary"
+      ],
+      "title": "CategoricalField",
+      "type": "object"
+    },
+    "ClassificationOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "classification",
+          "default": "classification",
+          "title": "Kind",
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Labels",
+          "type": "array"
+        }
+      },
+      "required": [
+        "labels"
+      ],
+      "title": "ClassificationOutput",
+      "type": "object"
+    },
+    "DenormalizeLayer": {
+      "additionalProperties": false,
+      "description": "``x * sqrt(variance) + mean`` (Keras ``Normalization(invert=True)``).",
+      "properties": {
+        "key": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Key",
+          "type": "string"
+        },
+        "op": {
+          "const": "denormalize",
+          "default": "denormalize",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "DenormalizeLayer",
+      "type": "object"
+    },
+    "DenseLayer": {
+      "additionalProperties": false,
+      "description": "``activation(x @ kernel + bias)``; arrays ``<key>.kernel`` and ``<key>.bias``.",
+      "properties": {
+        "activation": {
+          "enum": [
+            "relu",
+            "linear",
+            "softmax"
+          ],
+          "title": "Activation",
+          "type": "string"
+        },
+        "key": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Key",
+          "type": "string"
+        },
+        "op": {
+          "const": "dense",
+          "default": "dense",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "activation"
+      ],
+      "title": "DenseLayer",
+      "type": "object"
+    },
+    "GoldenRef": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$",
+          "title": "File",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "sha256"
+      ],
+      "title": "GoldenRef",
+      "type": "object"
+    },
+    "ImageInput": {
+      "additionalProperties": false,
+      "description": "Encoded image -> RGB float32 array in ``value_range`` (rescaling happens in the graph).",
+      "properties": {
+        "channels": {
+          "const": 3,
+          "default": 3,
+          "title": "Channels",
+          "type": "integer"
+        },
+        "formats": {
+          "default": [
+            "JPEG",
+            "PNG"
+          ],
+          "items": {
+            "enum": [
+              "JPEG",
+              "PNG",
+              "WEBP"
+            ],
+            "type": "string"
+          },
+          "title": "Formats",
+          "type": "array"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 4096,
+          "title": "Height",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "image",
+          "default": "image",
+          "title": "Kind",
+          "type": "string"
+        },
+        "max_bytes": {
+          "default": 5242880,
+          "exclusiveMinimum": 0,
+          "title": "Max Bytes",
+          "type": "integer"
+        },
+        "resample": {
+          "const": "bilinear",
+          "default": "bilinear",
+          "title": "Resample",
+          "type": "string"
+        },
+        "value_range": {
+          "default": [
+            0.0,
+            255.0
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Value Range",
+          "type": "array"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 4096,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "height",
+        "width"
+      ],
+      "title": "ImageInput",
+      "type": "object"
+    },
+    "LiteRtRuntimeSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$",
+          "title": "File",
+          "type": "string"
+        },
+        "kind": {
+          "const": "litert",
+          "default": "litert",
+          "title": "Kind",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "sha256"
+      ],
+      "title": "LiteRtRuntimeSpec",
+      "type": "object"
+    },
+    "NormalizeLayer": {
+      "additionalProperties": false,
+      "description": "``(x - mean) / sqrt(variance)``; arrays ``<key>.mean`` and ``<key>.variance``.",
+      "properties": {
+        "key": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Key",
+          "type": "string"
+        },
+        "op": {
+          "const": "normalize",
+          "default": "normalize",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "NormalizeLayer",
+      "type": "object"
+    },
+    "NumericField": {
+      "additionalProperties": false,
+      "description": "Raw numeric request field. ``impute`` is used when the value is null/missing.",
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "impute": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Impute"
+        },
+        "kind": {
+          "const": "numeric",
+          "default": "numeric",
+          "title": "Kind",
+          "type": "string"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "NumericField",
+      "type": "object"
+    },
+    "NumpyMlpRuntimeSpec": {
+      "additionalProperties": false,
+      "description": "Pure-NumPy fallback for MLPs: weights in an ``.npz`` (loaded with ``allow_pickle=False``).",
+      "properties": {
+        "file": {
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$",
+          "title": "File",
+          "type": "string"
+        },
+        "kind": {
+          "const": "numpy_mlp",
+          "default": "numpy_mlp",
+          "title": "Kind",
+          "type": "string"
+        },
+        "layers": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "denormalize": "#/$defs/DenormalizeLayer",
+                "dense": "#/$defs/DenseLayer",
+                "normalize": "#/$defs/NormalizeLayer"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/NormalizeLayer"
+              },
+              {
+                "$ref": "#/$defs/DenseLayer"
+              },
+              {
+                "$ref": "#/$defs/DenormalizeLayer"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Layers",
+          "type": "array"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "sha256",
+        "layers"
+      ],
+      "title": "NumpyMlpRuntimeSpec",
+      "type": "object"
+    },
+    "OneHotFeature": {
+      "additionalProperties": false,
+      "description": "``len(vocabulary)`` columns, in vocabulary order, for a categorical field.",
+      "properties": {
+        "kind": {
+          "const": "one_hot",
+          "default": "one_hot",
+          "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "OneHotFeature",
+      "type": "object"
+    },
+    "OnnxRuntimeSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$",
+          "title": "File",
+          "type": "string"
+        },
+        "kind": {
+          "const": "onnx",
+          "default": "onnx",
+          "title": "Kind",
+          "type": "string"
+        },
+        "opset": {
+          "minimum": 7,
+          "title": "Opset",
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "sha256",
+        "opset"
+      ],
+      "title": "OnnxRuntimeSpec",
+      "type": "object"
+    },
+    "PassthroughFeature": {
+      "additionalProperties": false,
+      "description": "One column: the (imputed) value of a numeric field.",
+      "properties": {
+        "kind": {
+          "const": "passthrough",
+          "default": "passthrough",
+          "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "PassthroughFeature",
+      "type": "object"
+    },
+    "QualityGate": {
+      "additionalProperties": false,
+      "description": "Export-time gate: the notebook refuses to write the artifact if it does not pass.",
+      "properties": {
+        "higher_is_better": {
+          "default": true,
+          "title": "Higher Is Better",
+          "type": "boolean"
+        },
+        "metric": {
+          "minLength": 1,
+          "title": "Metric",
+          "type": "string"
+        },
+        "split": {
+          "default": "validation",
+          "enum": [
+            "validation",
+            "test"
+          ],
+          "title": "Split",
+          "type": "string"
+        },
+        "threshold": {
+          "title": "Threshold",
+          "type": "number"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "metric",
+        "threshold",
+        "value"
+      ],
+      "title": "QualityGate",
+      "type": "object"
+    },
+    "RatioFeature": {
+      "additionalProperties": false,
+      "description": "One column: ``numerator / denominator`` of two (imputed) numeric fields.",
+      "properties": {
+        "denominator": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Denominator",
+          "type": "string"
+        },
+        "kind": {
+          "const": "ratio",
+          "default": "ratio",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "numerator": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "title": "Numerator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "numerator",
+        "denominator"
+      ],
+      "title": "RatioFeature",
+      "type": "object"
+    },
+    "RegressionOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "regression",
+          "default": "regression",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        },
+        "unit": {
+          "default": "",
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "title": "RegressionOutput",
+      "type": "object"
+    },
+    "ServingSkew": {
+      "additionalProperties": false,
+      "description": "Training (Keras) vs serving (exported runtime + API preprocessing) agreement.",
+      "properties": {
+        "accuracy_delta_pp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accuracy Delta Pp"
+        },
+        "max_abs_diff": {
+          "minimum": 0,
+          "title": "Max Abs Diff",
+          "type": "number"
+        },
+        "samples": {
+          "exclusiveMinimum": 0,
+          "title": "Samples",
+          "type": "integer"
+        },
+        "top1_agreement": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top1 Agreement"
+        }
+      },
+      "required": [
+        "samples",
+        "max_abs_diff"
+      ],
+      "title": "ServingSkew",
+      "type": "object"
+    },
+    "Status": {
+      "enum": [
+        "dummy",
+        "candidate",
+        "release"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "TabularInput": {
+      "additionalProperties": false,
+      "description": "Raw named fields -> ordered float32 feature vector (``features`` order = column order).",
+      "properties": {
+        "features": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "one_hot": "#/$defs/OneHotFeature",
+                "passthrough": "#/$defs/PassthroughFeature",
+                "ratio": "#/$defs/RatioFeature"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/PassthroughFeature"
+              },
+              {
+                "$ref": "#/$defs/OneHotFeature"
+              },
+              {
+                "$ref": "#/$defs/RatioFeature"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Features",
+          "type": "array"
+        },
+        "fields": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "categorical": "#/$defs/CategoricalField",
+                "numeric": "#/$defs/NumericField"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/NumericField"
+              },
+              {
+                "$ref": "#/$defs/CategoricalField"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Fields",
+          "type": "array"
+        },
+        "kind": {
+          "const": "tabular",
+          "default": "tabular",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fields",
+        "features"
+      ],
+      "title": "TabularInput",
+      "type": "object"
+    },
+    "Task": {
+      "enum": [
+        "classification",
+        "regression",
+        "image_classification"
+      ],
+      "title": "Task",
+      "type": "string"
+    },
+    "TensorSpec": {
+      "additionalProperties": false,
+      "description": "A graph input/output tensor. ``None`` in ``shape`` marks a dynamic (batch) axis.",
+      "properties": {
+        "dtype": {
+          "const": "float32",
+          "default": "float32",
+          "title": "Dtype",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "shape": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Shape",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "shape"
+      ],
+      "title": "TensorSpec",
+      "type": "object"
+    },
+    "TrainingInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "data_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Data Sha256",
+          "type": "string"
+        },
+        "dataset": {
+          "minLength": 1,
+          "title": "Dataset",
+          "type": "string"
+        },
+        "hardware": {
+          "default": "",
+          "title": "Hardware",
+          "type": "string"
+        },
+        "keras": {
+          "title": "Keras",
+          "type": "string"
+        },
+        "python": {
+          "title": "Python",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "tensorflow": {
+          "title": "Tensorflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset",
+        "data_sha256",
+        "seed",
+        "python",
+        "tensorflow",
+        "keras"
+      ],
+      "title": "TrainingInfo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "git_sha": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Git Sha"
+    },
+    "golden": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GoldenRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "input": {
+      "discriminator": {
+        "mapping": {
+          "image": "#/$defs/ImageInput",
+          "tabular": "#/$defs/TabularInput"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TabularInput"
+        },
+        {
+          "$ref": "#/$defs/ImageInput"
+        }
+      ],
+      "title": "Input"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/TensorSpec"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Inputs",
+      "type": "array"
+    },
+    "metrics": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "type": "object"
+      },
+      "title": "Metrics",
+      "type": "object"
+    },
+    "name": {
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "title": "Name",
+      "type": "string"
+    },
+    "output": {
+      "discriminator": {
+        "mapping": {
+          "classification": "#/$defs/ClassificationOutput",
+          "regression": "#/$defs/RegressionOutput"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ClassificationOutput"
+        },
+        {
+          "$ref": "#/$defs/RegressionOutput"
+        }
+      ],
+      "title": "Output"
+    },
+    "outputs": {
+      "items": {
+        "$ref": "#/$defs/TensorSpec"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Outputs",
+      "type": "array"
+    },
+    "quality_gate": {
+      "$ref": "#/$defs/QualityGate"
+    },
+    "runtimes": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "litert": "#/$defs/LiteRtRuntimeSpec",
+            "numpy_mlp": "#/$defs/NumpyMlpRuntimeSpec",
+            "onnx": "#/$defs/OnnxRuntimeSpec"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/OnnxRuntimeSpec"
+          },
+          {
+            "$ref": "#/$defs/NumpyMlpRuntimeSpec"
+          },
+          {
+            "$ref": "#/$defs/LiteRtRuntimeSpec"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Runtimes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "serving_skew": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ServingSkew"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "status": {
+      "$ref": "#/$defs/Status"
+    },
+    "task": {
+      "$ref": "#/$defs/Task"
+    },
+    "training": {
+      "$ref": "#/$defs/TrainingInfo"
+    },
+    "version": {
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "status",
+    "task",
+    "created_at",
+    "input",
+    "output",
+    "inputs",
+    "outputs",
+    "runtimes",
+    "quality_gate",
+    "training"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

@@ -1,0 +1,18 @@
+# Trivy ignore list (YAML format), loaded explicitly with `--ignorefile .trivyignore.yaml` by CI/CD.
+#
+# Policy: an entry is a documented, time-boxed exception, never a silent mute. Each entry needs
+# `statement` (why it is not exploitable / no fix exists), an `expired_at` date (the gate bites
+# again after it) and the narrowest `paths` / `purls` that apply. Prefer `--ignore-unfixed` (already
+# on in CI) and a VEX document (`trivy image --vex <file>`; for Docker Hardened Images export theirs
+# with `docker scout vex get registry://dhi.io/python:3.13`) over entries here.
+#
+# Example:
+#   vulnerabilities:
+#     - id: CVE-2026-00000
+#       purls:
+#         - "pkg:pypi/example@1.2.3"
+#       statement: "Vulnerable code path (parser X) is not reachable: the API never loads untrusted X."
+#       expired_at: 2026-12-31
+vulnerabilities: []
+misconfigurations: []
+secrets: []

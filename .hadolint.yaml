@@ -1,0 +1,15 @@
+# Hadolint configuration (https://github.com/hadolint/hadolint#configure).
+# CI/pre-commit run: hadolint --config .hadolint.yaml deploy/Dockerfile
+failure-threshold: warning
+no-fail: false
+
+# Registries the Dockerfile may pull from (DL3026). dhi.io = Docker Hardened Images; ghcr.io =
+# the pinned uv image; docker.io = the pinned python:3.13-slim fallback.
+trustedRegistries:
+  - dhi.io
+  - ghcr.io
+  - docker.io
+
+# Intentionally empty: exceptions are documented inline (`# hadolint ignore=...`) next to the
+# instruction they apply to, never silenced globally.
+ignored: []

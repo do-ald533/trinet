@@ -1,0 +1,188 @@
+[project]
+name = "trinet"
+version = "0.1.0"
+description = "TriNet: three Keras networks (tabular classification, tabular regression, image CNN) and a production inference API."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+license = "MIT"
+dependencies = []
+
+# Workspace = production code only (contract + API). The notebook is an independent
+# uv project with its own lock (TensorFlow requirements must not leak into the API lock).
+[tool.uv.workspace]
+members = ["contract", "api"]
+exclude = ["notebook"]
+
+[tool.uv]
+package = false
+required-version = ">=0.13.7"
+
+[tool.uv.sources]
+trinet-contract = { workspace = true }
+trinet-api = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.4",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "pytest-xdist>=3.8.0",
+    "hypothesis>=6.170.15",
+    "import-linter>=2.16",
+    "deptry>=0.25.1",
+    "httpx2>=2.16.0", # the TestClient backend Starlette 1.10 prefers (plain httpx is deprecated there)
+    "onnx>=1.21.0", # dev only (tools/make_dummy_artifacts.py); CVE-2026-34447 is fixed in 1.21.0
+    "schemathesis>=4.33.1",
+    "inline-snapshot>=0.36.2",
+    "testcontainers>=4.15.0",
+]
+
+# --------------------------------------------------------------------------- ruff
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = ["notebook"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF", "C4", "PT", "N", "ASYNC", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S311", "PT011"]
+"tools/**" = ["S603", "S607"]
+# Error names follow PLANO 5.2 (ModelNotFound, InvalidInput, ...) and read better without a suffix.
+"api/src/trinet_api/domain/errors.py" = ["N818"]
+"api/src/trinet_api/interface/http/security.py" = ["N818"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["trinet_contract", "trinet_api"]
+
+# --------------------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+exclude = ["^notebook/"]
+
+# Third-party packages that ship no type information.
+[[tool.mypy.overrides]]
+module = ["onnxruntime", "onnxruntime.*", "ai_edge_litert", "ai_edge_litert.*", "slowapi", "slowapi.*"]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# --------------------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+minversion = "9.0"
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+testpaths = ["contract/tests", "api/tests"]
+# api/ -> `tests.fakes`; tools/ -> `make_dummy_artifacts` (shared by tests and the CLI).
+pythonpath = ["api", "tools"]
+markers = ["integration: needs Docker and TRINET_IMAGE (Testcontainers); skipped otherwise"]
+xfail_strict = true
+
+[tool.coverage.run]
+branch = true
+source = ["trinet_contract", "trinet_api"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]
+
+# --------------------------------------------------------------------------- import-linter
+[tool.importlinter]
+root_packages = [
+    "trinet_api",
+    "trinet_contract",
+    "fastapi",
+    "starlette",
+    "pydantic",
+    "pydantic_settings",
+    "onnxruntime",
+    "structlog",
+    "prometheus_client",
+    "slowapi",
+    "limits",
+    "uvicorn",
+    "PIL",
+]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Hexagonal layers: interface > infrastructure > application > domain"
+type = "layers"
+layers = [
+    "trinet_api.interface",
+    "trinet_api.infrastructure",
+    "trinet_api.application",
+    "trinet_api.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain imports only stdlib, NumPy and trinet_contract"
+type = "forbidden"
+source_modules = ["trinet_api.domain"]
+forbidden_modules = [
+    "trinet_api.application",
+    "trinet_api.infrastructure",
+    "trinet_api.interface",
+    "trinet_api.settings",
+    "fastapi",
+    "starlette",
+    "pydantic",
+    "pydantic_settings",
+    "onnxruntime",
+    "structlog",
+    "prometheus_client",
+    "slowapi",
+    "limits",
+    "uvicorn",
+    "PIL",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Application is framework-free (no web, runtime, logging or metrics libraries)"
+type = "forbidden"
+source_modules = ["trinet_api.application"]
+forbidden_modules = [
+    "trinet_api.settings",
+    "fastapi",
+    "starlette",
+    "pydantic_settings",
+    "onnxruntime",
+    "structlog",
+    "prometheus_client",
+    "slowapi",
+    "limits",
+    "uvicorn",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Interface never imports runtime adapters (only the loader/composition root wires them)"
+type = "forbidden"
+source_modules = ["trinet_api.interface"]
+forbidden_modules = ["trinet_api.infrastructure.runtimes", "onnxruntime"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Only the loader instantiates runtime adapters"
+type = "forbidden"
+source_modules = ["trinet_api.infrastructure.observability", "trinet_api.settings"]
+forbidden_modules = ["trinet_api.infrastructure.runtimes"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "The contract package knows nothing about the API"
+type = "forbidden"
+source_modules = ["trinet_contract"]
+forbidden_modules = ["trinet_api"]

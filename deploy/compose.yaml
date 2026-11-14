@@ -1,0 +1,89 @@
+# TriNet - local/production-like deployment (PLANO §9). No cloud, no Kubernetes.
+#
+#   make secrets                       # creates ../secrets/api_key (gitignored) if missing
+#   make up                            # api on http://127.0.0.1:8000
+#   make observability                 # + Prometheus on http://127.0.0.1:9090
+#   make deploy IMAGE=ghcr.io/<owner>/trinet-api@sha256:...   # verify attestation, then up
+#
+# Variables (see ../.env.example): TRINET_IMAGE, BASE_IMAGE, BUILD_IMAGE, TRINET_API_PORT, ...
+
+name: trinet
+
+services:
+  api:
+    # Default: the image built locally by `make build`. Production-like runs override it with the
+    # published image pinned by digest: TRINET_IMAGE=ghcr.io/<owner>/trinet-api@sha256:<digest>
+    image: ${TRINET_IMAGE:-trinet-api:local}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-dhi.io/python:3.13}
+        BUILD_IMAGE: ${BUILD_IMAGE:-dhi.io/python:3.13-dev}
+    init: true
+    restart: unless-stopped
+
+    # --- hardening ---------------------------------------------------------------------------
+    read_only: true
+    tmpfs:
+      # Starlette spools multipart uploads > 1 MB to disk (PLANO §5.4); uid 65532 must be able to write.
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: 2
+    mem_limit: 1g
+
+    # Public API only, bound to loopback. The metrics port (9100) is NOT published: Prometheus
+    # reaches it over the compose network.
+    ports:
+      - "127.0.0.1:${TRINET_API_PORT:-8000}:8000"
+
+    environment:
+      TRINET_LOG_LEVEL: ${TRINET_LOG_LEVEL:-INFO}
+      TRINET_MAX_CONCURRENCY: ${TRINET_MAX_CONCURRENCY:-2}
+      # Explicit, because ONNX Runtime may not honour the cgroup CPU quota (PLANO §5.4).
+      TRINET_ORT_INTRA_OP_THREADS: ${TRINET_ORT_INTRA_OP_THREADS:-1}
+      TRINET_RATE_LIMIT: ${TRINET_RATE_LIMIT:-60/minute}
+      TRINET_MAX_BATCH: ${TRINET_MAX_BATCH:-256}
+
+    # File-based secret (never an env var), mounted read-only at /run/secrets/api_key. Compose
+    # (non-Swarm) ignores uid/gid/mode on secrets - it bind-mounts the host file as is - so the file
+    # must be readable by uid 65532: `make secrets` creates it 0644 inside a 0700 directory.
+    secrets:
+      - api_key
+
+  prometheus:
+    profiles: [observability]
+    # Pinned by digest (multi-arch index of prom/prometheus:v3.16.0). Dependabot (docker-compose
+    # ecosystem) proposes new tag+digest pairs.
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    cpus: 1
+    mem_limit: 512m
+    depends_on:
+      - api
+
+secrets:
+  api_key:
+    file: ../secrets/api_key
+
+volumes:
+  prometheus-data:

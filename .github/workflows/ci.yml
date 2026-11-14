@@ -1,0 +1,477 @@
+# Pull-request / main CI (PLANO §8.1).
+#
+# `ci-gate` is the ONLY required status check of the repository ruleset: it aggregates every blocking
+# job, so path-filtered or matrix jobs can never leave a required check stuck in "Expected".
+# Security scan steps honour the repository variable SECURITY_GATE: `warn` turns them into
+# annotations instead of failures (PLANO §8.4: from 16/11 so the pipeline cannot block delivery).
+# CodeQL runs through GitHub's *default setup* (repo setting, no workflow) - see .github/CICD.md.
+#
+# Every action is pinned by full commit SHA (CVE-2026-33634 lesson); CLIs are installed by
+# .github/scripts/install-cli.sh with checksums pinned in the repository.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.13.7"
+  UV_LOCKED: "1" # every uv command fails if uv.lock is stale
+  UV_NO_PROGRESS: "1"
+  HYPOTHESIS_PROFILE: ci
+  IMAGE_TAG: trinet-api:ci
+
+jobs:
+  # ------------------------------------------------------------------ change detection
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # checkout
+    outputs:
+      notebook: ${{ steps.filter.outputs.notebook }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect notebook changes
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          base=""
+          case "$EVENT" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            push) base="$PUSH_BEFORE_SHA" ;;
+          esac
+          if [ -z "$base" ] || [ "${base//0/}" = "" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "Cannot diff against a base commit; running the notebook lint."
+            echo "notebook=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$base" "$HEAD_SHA" | grep -Eq '^(notebook/|\.github/workflows/ci\.yml$)'; then
+            echo "notebook=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "notebook=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ------------------------------------------------------------------ code quality (blocking)
+  static:
+    name: static (${{ matrix.check }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # checkout
+    strategy:
+      fail-fast: false
+      matrix:
+        # make targets: ruff check + format, mypy --strict, import-linter, deptry
+        check: [lint, typecheck, imports, deptry]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install the workspace
+        run: make install
+      - name: make ${{ matrix.check }}
+        env:
+          CHECK: ${{ matrix.check }}
+          RUFF_ARGS: --output-format=github
+        run: make "$CHECK"
+
+  test:
+    name: tests + coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install the workspace
+        run: make install
+      - name: pytest (unit, api, golden, property, schemathesis) with coverage gate
+        run: make cov
+      - name: Upload coverage.xml
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  contract-drift:
+    name: contract schema drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Regenerate the JSON Schemas and fail on drift
+        run: make schema-check UVRUN="uv run --package trinet-contract"
+
+  artifacts:
+    name: artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Validate manifests, golden files, SHA-256 and size guard
+        run: make check-artifacts
+
+  actionlint:
+    name: actionlint + shellcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint (pinned, checksum-verified)
+        run: .github/scripts/install-cli.sh actionlint
+      - name: actionlint (uses the preinstalled shellcheck on run blocks)
+        run: actionlint -color
+      - name: shellcheck of repository scripts
+        run: shellcheck .github/scripts/*.sh
+
+  notebook-lint:
+    name: notebook lint (nbQA + ruff)
+    needs: changes
+    if: ${{ needs.changes.outputs.notebook == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Static lint of notebooks (no TensorFlow is installed)
+        # Syntax errors and pyflakes only (undefined names, unused imports): notebooks are
+        # exploratory, so style rules are not enforced. --isolated ignores the root ruff config,
+        # which excludes notebook/.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          notebooks=(notebook/**/*.ipynb)
+          if [ "${#notebooks[@]}" -eq 0 ]; then
+            echo "No notebooks to lint."
+            exit 0
+          fi
+          uvx --from nbqa==1.10.0 --with ruff==0.17.4 nbqa ruff "${notebooks[@]}" \
+            --isolated --select E9,F --target-version py313
+
+  # ------------------------------------------------------------------ security (SECURITY_GATE)
+  osv-scanner:
+    name: SCA - OSV-Scanner (uv.lock)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install OSV-Scanner (pinned, checksum-verified)
+        run: .github/scripts/install-cli.sh osv-scanner
+      - name: Scan uv.lock
+        id: scan
+        continue-on-error: ${{ vars.SECURITY_GATE == 'warn' }}
+        run: osv-scanner scan source --lockfile uv.lock --format table
+      - name: Report non-blocking mode
+        if: ${{ steps.scan.outcome == 'failure' }}
+        run: echo "::warning title=SECURITY_GATE=warn::OSV-Scanner found vulnerabilities in uv.lock (not blocking)"
+
+  gitleaks:
+    name: secrets - Gitleaks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Gitleaks (pinned, checksum-verified)
+        run: .github/scripts/install-cli.sh gitleaks
+      - name: Scan the full git history
+        id: scan
+        continue-on-error: ${{ vars.SECURITY_GATE == 'warn' }}
+        run: gitleaks git --no-banner --redact --verbose --exit-code 1 .
+      - name: Report non-blocking mode
+        if: ${{ steps.scan.outcome == 'failure' }}
+        run: echo "::warning title=SECURITY_GATE=warn::Gitleaks found potential secrets (not blocking)"
+
+  zizmor:
+    name: CI security - zizmor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install zizmor (pinned, checksum-verified)
+        run: .github/scripts/install-cli.sh zizmor
+      - name: Audit workflows, composite actions, dependabot and pre-commit config
+        id: scan
+        continue-on-error: ${{ vars.SECURITY_GATE == 'warn' }}
+        env:
+          GH_TOKEN: ${{ github.token }} # enables the online audits (impostor commits, known-vulnerable actions)
+        run: zizmor --persona=regular --min-severity=low --strict-collection .
+      - name: Report non-blocking mode
+        if: ${{ steps.scan.outcome == 'failure' }}
+        run: echo "::warning title=SECURITY_GATE=warn::zizmor reported findings (not blocking)"
+
+  dockerfile:
+    name: Dockerfile - Hadolint + Trivy config
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Hadolint and Trivy (pinned, checksum-verified)
+        run: .github/scripts/install-cli.sh hadolint trivy
+      - name: Validate the compose file
+        run: docker compose -f deploy/compose.yaml --profile observability config --quiet
+      - name: Hadolint
+        id: hadolint
+        continue-on-error: ${{ vars.SECURITY_GATE == 'warn' }}
+        run: hadolint --config .hadolint.yaml deploy/Dockerfile
+      - name: Trivy misconfiguration scan (embedded checks, no network)
+        id: trivy
+        continue-on-error: ${{ vars.SECURITY_GATE == 'warn' }}
+        run: trivy config --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --no-progress deploy
+      - name: Report non-blocking mode
+        if: ${{ steps.hadolint.outcome == 'failure' || steps.trivy.outcome == 'failure' }}
+        run: echo "::warning title=SECURITY_GATE=warn::Dockerfile findings (not blocking)"
+
+  image:
+    name: image - build, Trivy, boot smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # checkout
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Choose the base image
+        id: base
+        env:
+          DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+          DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+          DHI_BASE_IMAGE: ${{ vars.DHI_BASE_IMAGE }}
+          DHI_BUILD_IMAGE: ${{ vars.DHI_BUILD_IMAGE }}
+        run: |
+          set -euo pipefail
+          if [ -n "$DHI_USERNAME" ] && [ -n "$DHI_TOKEN" ]; then
+            {
+              echo "flavor=dhi"
+              echo "base=${DHI_BASE_IMAGE:-dhi.io/python:3.13}"
+              echo "build=${DHI_BUILD_IMAGE:-dhi.io/python:3.13-dev}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Base image::DHI credentials are not available (fork, Dependabot or not configured): using the pinned python:3.13-slim-trixie fallback"
+            {
+              echo "flavor=slim"
+              echo "base=slim"
+              echo "build=slim"
+            } >> "$GITHUB_OUTPUT"
+          fi
+      - name: Log in to dhi.io
+        if: ${{ steps.base.outputs.flavor == 'dhi' }}
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USERNAME }}
+          password: ${{ secrets.DHI_TOKEN }}
+
+      - name: Set up Docker Buildx (BuildKit pinned by digest)
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+      - name: Build the image (load only, nothing is pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/Dockerfile
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_TAG }}
+          build-args: |
+            BASE_IMAGE=${{ steps.base.outputs.base }}
+            BUILD_IMAGE=${{ steps.base.outputs.build }}
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
+            IMAGE_REVISION=${{ github.event.pull_request.head.sha || github.sha }}
+            IMAGE_VERSION=ci
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=ci-image-${{ steps.base.outputs.flavor }}
+          cache-to: type=gha,mode=max,scope=ci-image-${{ steps.base.outputs.flavor }},ignore-error=true
+
+      - name: Boot smoke test (hardened run, readiness, auth)
+        run: .github/scripts/smoke-image.sh "$IMAGE_TAG"
+
+      - name: Install Trivy (pinned, checksum-verified)
+        run: .github/scripts/install-cli.sh trivy
+      - name: Date for the Trivy DB cache key
+        id: date
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - name: Cache the Trivy vulnerability DB
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ steps.date.outputs.day }}
+          restore-keys: trivy-db-
+      - name: Trivy image scan (HIGH/CRITICAL, fixed vulnerabilities only)
+        id: trivy
+        continue-on-error: ${{ vars.SECURITY_GATE == 'warn' }}
+        run: |
+          trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --skip-java-db-update \
+            --ignorefile .trivyignore.yaml --no-progress "$IMAGE_TAG"
+      - name: Report non-blocking mode
+        if: ${{ steps.trivy.outcome == 'failure' }}
+        run: echo "::warning title=SECURITY_GATE=warn::Trivy found fixable HIGH/CRITICAL vulnerabilities in the image (not blocking)"
+
+  # ------------------------------------------------------------------ advisory (not in ci-gate)
+  sonar:
+    name: SonarQube Cloud (advisory)
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read # checkout
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Checkout (full history for blame/new-code detection)
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download coverage.xml
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-xml
+      - name: SonarQube scan
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
+      - name: Skipped
+        if: ${{ env.SONAR_TOKEN == '' }}
+        run: echo "::notice title=Sonar::SONAR_TOKEN is not available (fork/Dependabot or not configured); advisory analysis skipped"
+
+  # ------------------------------------------------------------------ the single required check
+  ci-gate:
+    name: ci-gate
+    if: ${{ always() }}
+    needs:
+      - changes
+      - static
+      - test
+      - contract-drift
+      - artifacts
+      - actionlint
+      - notebook-lint
+      - osv-scanner
+      - gitleaks
+      - zizmor
+      - dockerfile
+      - image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every blocking job to have succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' | sort
+          # notebook-lint is path-filtered, so "skipped" is legitimate only for it.
+          failed="$(echo "$NEEDS" | jq -r '
+            to_entries[]
+            | select(.value.result == "failure" or .value.result == "cancelled"
+                     or (.value.result == "skipped" and .key != "notebook-lint"))
+            | .key')"
+          if [ -n "$failed" ]; then
+            echo "::error title=ci-gate::Blocking jobs not green: $(echo "$failed" | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "All blocking jobs passed."

@@ -1,0 +1,11 @@
+[project]
+name = "trinet-contract"
+version = "1.0.0"
+description = "Artifact contract (manifest + golden samples) shared by the TriNet notebook and inference API."
+requires-python = ">=3.13,<3.14"
+license = "MIT"
+dependencies = ["pydantic>=2.14.3"]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14"]
+build-backend = "uv_build"

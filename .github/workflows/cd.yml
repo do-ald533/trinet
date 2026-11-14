@@ -1,0 +1,337 @@
+# Continuous delivery (PLANO §8.2): ONE build, pushed to GHCR by digest; the scanned, attested and
+# smoke-tested image is exactly the published one (no rebuild between steps).
+#
+#   publish  : build -> push -> Trivy (digest) -> CycloneDX SBOM -> attest provenance + SBOM -> verify
+#   smoke    : Testcontainers integration tests against the published digest
+#   release-gate : tools/check_artifacts.py --release (no dummy artifacts, latest >= 1.0.0)
+#   promote  : only if the release gate passed - moves `latest` (and the version tag on a manual release)
+#
+# Until real artifacts replace the dummies, `publish` + `smoke` still run and produce a digest-tagged
+# `sha-<commit>` candidate, but `latest` is never moved and a manual release is refused.
+# Deploy: `make deploy DEPLOY_IMAGE=ghcr.io/<owner>/trinet-api@sha256:<digest>` verifies the
+# attestations with `gh attestation verify` before starting the container.
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Promote to release tags (latest + version); refused while any artifact is a dummy"
+        type: boolean
+        default: false
+      version:
+        description: "Release version without the leading v, e.g. 1.0.0 (required when release is true)"
+        type: string
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false # never interrupt a publish half-way
+
+env:
+  UV_VERSION: "0.13.7"
+  UV_NO_PROGRESS: "1"
+
+jobs:
+  publish:
+    name: build, push, scan, SBOM, attest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read # checkout
+      packages: write # push the image to GHCR (and the attestations to the registry)
+      id-token: write # OIDC token for Sigstore keyless signing (actions/attest)
+      attestations: write # store the attestations
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+      tag: ${{ steps.name.outputs.tag }}
+    steps:
+      - name: Harden the runner (audit)
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compute image name and tag
+        id: name
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          {
+            echo "image=ghcr.io/${OWNER,,}/trinet-api" # GHCR requires lowercase
+            echo "tag=sha-${GITHUB_SHA::12}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Choose the base image
+        id: base
+        env:
+          DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+          DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+          DHI_BASE_IMAGE: ${{ vars.DHI_BASE_IMAGE }}
+          DHI_BUILD_IMAGE: ${{ vars.DHI_BUILD_IMAGE }}
+        run: |
+          set -euo pipefail
+          if [ -n "$DHI_USERNAME" ] && [ -n "$DHI_TOKEN" ]; then
+            {
+              echo "flavor=dhi"
+              echo "base=${DHI_BASE_IMAGE:-dhi.io/python:3.13}"
+              echo "build=${DHI_BUILD_IMAGE:-dhi.io/python:3.13-dev}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Base image::DHI credentials are not configured: publishing an image built on the python:3.13-slim-trixie fallback"
+            {
+              echo "flavor=slim"
+              echo "base=slim"
+              echo "build=slim"
+            } >> "$GITHUB_OUTPUT"
+          fi
+      - name: Log in to dhi.io
+        if: ${{ steps.base.outputs.flavor == 'dhi' }}
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USERNAME }}
+          password: ${{ secrets.DHI_TOKEN }}
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Set up Docker Buildx (BuildKit pinned by digest)
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+      - name: Build and push (by digest)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: ${{ steps.name.outputs.image }}:${{ steps.name.outputs.tag }}
+          build-args: |
+            BASE_IMAGE=${{ steps.base.outputs.base }}
+            BUILD_IMAGE=${{ steps.base.outputs.build }}
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
+            IMAGE_REVISION=${{ github.sha }}
+            IMAGE_VERSION=${{ steps.name.outputs.tag }}
+          # Attestations are created once, below, by actions/attest (no duplicates from buildx).
+          provenance: false
+          sbom: false
+          # No build cache here on purpose: a publishing job must not consume a restorable cache.
+
+      - name: Install Trivy (pinned, checksum-verified)
+        run: .github/scripts/install-cli.sh trivy
+      - name: Trivy scan of the pushed digest (HIGH/CRITICAL, fixed vulnerabilities only)
+        id: trivy
+        continue-on-error: ${{ vars.SECURITY_GATE == 'warn' }}
+        env:
+          IMAGE_REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          trivy image --image-src remote --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --skip-java-db-update \
+            --ignorefile .trivyignore.yaml --no-progress "$IMAGE_REF"
+      - name: Report non-blocking mode
+        if: ${{ steps.trivy.outcome == 'failure' }}
+        run: echo "::warning title=SECURITY_GATE=warn::Trivy found fixable HIGH/CRITICAL vulnerabilities in the published image (not blocking)"
+      - name: CycloneDX SBOM (Trivy)
+        env:
+          IMAGE_REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          trivy image --image-src remote --format cyclonedx --output sbom.cdx.json \
+            --db-repository public.ecr.aws/aquasecurity/trivy-db:2 --skip-java-db-update --no-progress "$IMAGE_REF"
+      - name: Keep the SBOM as a workflow artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attest build provenance (SLSA)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          # Storage records exist only for organization-owned repositories (and would need the
+          # artifact-metadata permission). Flip both when the repository moves to an organization.
+          create-storage-record: false
+      - name: Attest the SBOM (CycloneDX)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Verify the attestations exactly as `make deploy` does
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          verify() {
+            for attempt in 1 2 3 4 5; do
+              if gh attestation verify "oci://$IMAGE_REF" --repo "$GITHUB_REPOSITORY" \
+                   --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/cd.yml" \
+                   --deny-self-hosted-runners "$@"; then
+                return 0
+              fi
+              echo "attestation not visible yet (attempt $attempt), retrying..."
+              sleep 10
+            done
+            return 1
+          }
+          verify
+          verify --predicate-type https://cyclonedx.org/bom
+      - name: Summary
+        env:
+          IMAGE_REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+          FLAVOR: ${{ steps.base.outputs.flavor }}
+        run: |
+          {
+            echo "### Published image"
+            echo
+            echo "- Reference: \`$IMAGE_REF\`"
+            echo "- Base: \`$FLAVOR\`"
+            echo "- Deploy: \`make deploy DEPLOY_IMAGE=$IMAGE_REF\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    name: smoke (Testcontainers vs the digest)
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read # checkout
+      packages: read # pull the image
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Install the workspace
+        env:
+          UV_LOCKED: "1"
+        run: make install
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Pull the published digest
+        env:
+          IMAGE_REF: ${{ needs.publish.outputs.image }}@${{ needs.publish.outputs.digest }}
+        run: docker pull "$IMAGE_REF"
+      - name: Integration tests (ready, one prediction per model, 401 without key)
+        env:
+          UV_LOCKED: "1"
+          IMAGE_REF: ${{ needs.publish.outputs.image }}@${{ needs.publish.outputs.digest }}
+        run: make integration IMAGE="$IMAGE_REF"
+
+  release-gate:
+    name: release gate (no dummy artifacts)
+    needs: [publish, smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read # checkout
+    outputs:
+      releasable: ${{ steps.gate.outputs.releasable }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: tools/check_artifacts.py --release
+        id: gate
+        env:
+          UV_LOCKED: "1"
+          EVENT: ${{ github.event_name }}
+          RELEASE_REQUESTED: ${{ inputs.release }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ] && [ "$RELEASE_REQUESTED" = true ]; then
+            if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error title=release::'version' must look like 1.0.0 when release is true"
+              exit 1
+            fi
+          fi
+          if make check-artifacts-release; then
+            echo "releasable=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "releasable=false" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = workflow_dispatch ] && [ "$RELEASE_REQUESTED" = true ]; then
+            echo "::error title=release refused::at least one model artifact is a dummy or below 1.0.0"
+            exit 1
+          fi
+          echo "::warning title=not releasable::artifacts are not release-ready; the image stays a sha-tagged candidate and 'latest' is not moved"
+
+  promote:
+    name: promote (latest / version tag)
+    needs: [publish, smoke, release-gate]
+    if: ${{ needs.release-gate.outputs.releasable == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # no checkout needed, kept explicit
+      packages: write # add tags to the already-published digest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Add tags to the digest (no rebuild, the digest and its attestations are unchanged)
+        env:
+          IMAGE: ${{ needs.publish.outputs.image }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+          EVENT: ${{ github.event_name }}
+          RELEASE_REQUESTED: ${{ inputs.release }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tags=(latest)
+          if [ "$EVENT" = workflow_dispatch ] && [ "$RELEASE_REQUESTED" = true ]; then
+            tags+=("$VERSION")
+          fi
+          for tag in "${tags[@]}"; do
+            # --prefer-index=false = carbon copy. Without it, buildx wraps a single image manifest
+            # in a new image index, which would change the digest and orphan the attestations.
+            docker buildx imagetools create --prefer-index=false --tag "$IMAGE:$tag" "$IMAGE@$DIGEST"
+            actual="sha256:$(docker buildx imagetools inspect --raw "$IMAGE:$tag" | sha256sum | cut -d' ' -f1)"
+            if [ "$actual" != "$DIGEST" ]; then
+              echo "::error title=promote::$IMAGE:$tag points to $actual, expected $DIGEST"
+              exit 1
+            fi
+            echo "$IMAGE:$tag -> $DIGEST"
+          done

@@ -1,0 +1,1 @@
+"""Interfaces (driving adapters)."""

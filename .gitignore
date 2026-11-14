@@ -1,0 +1,40 @@
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit*.xml
+
+# Notebook / data (datasets are never committed)
+.ipynb_checkpoints/
+data/
+notebook/data/
+notebook/outputs/
+mlruns/
+*.keras
+*.h5
+*.weights.h5
+
+# Secrets (Kaggle token, API keys, compose secrets)
+kaggle.json
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

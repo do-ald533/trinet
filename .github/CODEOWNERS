@@ -1,0 +1,12 @@
+# Code owners (https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners).
+# "Require review from Code Owners" belongs in the main ruleset: model artifacts and the contract
+# are what the API trusts, and .github/ + deploy/ are the supply chain.
+#
+# TODO(user): @doald533 is a PLACEHOLDER derived from the local account name - replace it with the
+# real GitHub handle (or a team) before enabling the ruleset rule.
+/artifacts/   @doald533
+/contract/    @doald533
+/.github/     @doald533
+/deploy/      @doald533
+/tools/       @doald533
+/.pre-commit-config.yaml @doald533
