@@ -38,3 +38,6 @@ secrets/
 .DS_Store
 .idea/
 .vscode/
+
+# Copia entregue no Canvas (tem nomes e RA; nunca vai para o repositorio publico)
+notebook/*_entrega.ipynb

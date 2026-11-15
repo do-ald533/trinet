@@ -18,18 +18,13 @@ API estavel (PLANO v1.2, V3). Rodar esta parte sozinha basta para usar tudo abai
 """
 
 # %% [markdown]
-# # Parte 2A · Dados de mercado: S&P 500 (compartilhados pelas redes 2 e 3)
+# # Parte 2A · Dados de mercado: S&P 500 (usados nas redes 2 e 3)
 #
-# As redes de **volatilidade (regressão)** e de **gráficos de candlestick (CNN)** modelam a **mesma grandeza**: a volatilidade
-# realizada dos próximos 5 pregões de ações do S&P 500. Por isso o carregamento, a limpeza, o alvo, a janela válida e a
-# divisão cronológica ficam **numa única parte**, e as duas redes usam exatamente as mesmas funções (mesmas amostras, mesmo
-# treino/validação/teste), o que torna a comparação "números × imagem" justa.
+# As redes de volatilidade (regressão) e de candlestick (CNN) preveem a mesma coisa: a volatilidade dos próximos 5 pregões de ações do S&P 500. Por isso o carregamento, a limpeza, o alvo e a divisão em treino, validação e teste ficam numa parte só, e as duas redes usam exatamente as mesmas amostras. Assim a comparação entre números e imagem é justa.
 #
-# > **Aviso:** conteúdo educacional. Nada aqui é recomendação de investimento.
+# **Fonte:** Kaggle `camnugent/sandp500` (preços diários ajustados a splits, 505 tickers, fev/2013 a fev/2018). Não conseguimos confirmar a licença do arquivo, então o CSV não vai para o repositório. O download é anônimo (`kagglehub`).
 #
-# **Fonte:** Kaggle `camnugent/sandp500` (preços diários ajustados a splits, 505 tickers, fev/2013 a fev/2018).
-# A licença e a origem do arquivo **não foram verificadas**, então o CSV **nunca é versionado** (fica fora do repositório).
-# O download é anônimo (`kagglehub`), sem credenciais.
+# > Conteúdo educacional. Nada aqui é recomendação de investimento.
 
 # %%
 import os
@@ -224,10 +219,9 @@ def regime_labels(y, edges) -> np.ndarray:
 REGIME_NAMES = ("baixa", "media", "alta")
 
 # %% [markdown]
-# ## Carregamento e limpeza (regra V3.1)
+# ## Carregamento e limpeza
 #
-# Ordenamos por `(ticker, date)` e removemos linhas com NaN em open/high/low/close, volume 0, `high < low` ou `close` fora de
-# `[low, high]` (as contagens por regra são independentes: uma linha pode violar várias, por exemplo, as 4 linhas de volume 0 também têm OHLC em NaN). O retorno é `r_t = ln(close_t / close_{t-1})` **dentro do ticker**.
+# Ordenamos por `(ticker, date)` e removemos as linhas com NaN em open/high/low/close, volume 0, `high < low` ou `close` fora de `[low, high]` (as contagens são independentes: uma linha pode quebrar mais de uma regra, e as 4 linhas de volume 0 também têm OHLC em NaN). O retorno é `r_t = ln(close_t / close_{t-1})`, calculado dentro de cada ticker.
 
 # %%
 _t0 = time.time()
@@ -239,15 +233,12 @@ for _k, _v in sp500_report.items():
 sp.head()
 
 # %% [markdown]
-# ## Alvo, janela válida e divisão cronológica
+# ## Alvo, janela válida e divisão por data
 #
-# - **Alvo:** `y_t = sqrt(252 · média(r²_{t+1..t+5}))`, a volatilidade anualizada dos **próximos** 5 pregões (fração; 0,20 = 20% a.a.).
-# - **Amostra válida em `t`:** exige a janela `[t-59, t+5]` **contígua** (nenhum salto > 5 dias corridos entre pregões) e **nenhum
-#   |r| > 0,4** nela. Retornos desse tamanho são, quase sempre, splits/spin-offs sem ajuste na fonte (BAX, DISCA/DISCK, EBAY, LNT, NI);
-#   a regra descarta também uns poucos eventos reais (AMD, CHK, WMB), o que fica documentado.
-# - **Divisão cronológica** por data, todos os tickers juntos: 70% / 15% / 15% dos pregões, com **embargo de 5 pregões** em cada
-#   fronteira (o alvo olha 5 dias à frente). Nenhuma amostra embaralhada entre períodos.
-# - **Novas instâncias:** os 5 últimos pregões (ainda sem alvo) ficam fora do teste, que termina em T-5.
+# - **Alvo:** `y_t = sqrt(252 · média(r²_{t+1..t+5}))`, a volatilidade anualizada dos próximos 5 pregões (em fração: 0,20 = 20% ao ano).
+# - **Amostra válida em `t`:** exige a janela `[t-59, t+5]` contínua (sem saltos de mais de 5 dias corridos entre pregões) e nenhum |r| > 0,4 nela. Retornos desse tamanho quase sempre são splits ou spin-offs que a fonte não ajustou (BAX, DISCA/DISCK, EBAY, LNT, NI). A regra também descarta alguns eventos reais (AMD, CHK, WMB), e deixamos isso registrado.
+# - **Divisão por data:** 70% / 15% / 15% dos pregões, com todos os tickers juntos e um intervalo de 5 pregões entre as partes (o alvo olha 5 dias para frente, então sem esse intervalo haveria vazamento). Nenhuma amostra é embaralhada entre períodos.
+# - **Novas instâncias:** os 5 últimos pregões (que ainda não têm alvo) ficam fora do teste, que termina 5 pregões antes do fim.
 
 # %%
 sp = add_positions(sp)

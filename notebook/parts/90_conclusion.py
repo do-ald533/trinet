@@ -7,8 +7,7 @@ cnn_comparison, cnn_vs_har_pvalue, vol_baseline_acc_*.
 # %% [markdown]
 # # 4 · Conclusões
 #
-# Três redes, construídas camada a camada em `tf.keras.layers`, para três riscos financeiros. As tabelas abaixo resumem o desempenho **no teste** (tocado uma única vez em cada rede) **contra os baselines**,
-# que são o que dá sentido às métricas: um número isolado não diz se o modelo vale a pena.
+# Construímos três redes camada a camada com `tf.keras.layers`, para três riscos financeiros. As tabelas abaixo resumem o desempenho no teste (usado uma única vez em cada rede) contra os baselines, que são o que dá sentido às métricas: um número isolado não diz se o modelo vale a pena.
 
 # %% [markdown]
 # ## 4.1 Rede 1 · Risco de crédito (classificação)
@@ -36,9 +35,7 @@ print(f"Margem de erro relativa do MLP: MAE/média = {_v['MAE/média']:.1%}, RMS
 # %% [markdown]
 # ## 4.3 Rede 3 · Risco de mercado, via imagem (CNN) e a pergunta "números × imagem"
 #
-# Mesmo alvo (regime de volatilidade dos próximos 5 pregões: `baixa`, `media`, `alta`, tercis do treino), mesmo período de teste. A CNN vê **só o desenho** do gráfico;
-# a Rede 2 vê as **25 features numéricas**. A comparação justa usa **as mesmas linhas** de teste (a CNN treina e testa numa subamostra com passo, ver parte 3).
-# A célula só roda se a parte 3 tiver sido executada nesta sessão (variáveis `cnn_*`); caso contrário, apenas avisa.
+# Mesmo alvo (regime de volatilidade dos próximos 5 pregões: `baixa`, `media`, `alta`, tercis do treino) e mesmo período de teste. A CNN vê só o desenho do gráfico, e a Rede 2 vê as 25 features numéricas. Para a comparação ser justa, usamos as mesmas linhas de teste (a CNN treina e testa numa subamostra com passo, ver parte 3). A célula só roda se a parte 3 foi executada nesta sessão (variáveis `cnn_*`); caso contrário, ela só avisa.
 
 # %%
 if "cnn_test_acc" in globals():
@@ -106,38 +103,34 @@ else:
 # %% [markdown]
 # ## 4.4 O que funcionou
 #
-# - **Ganhos modestos e medidos, não presumidos:** o MLP supera a regressão logística no crédito (ROC-AUC ≈ 0,77 × 0,72, PR-AUC ≈ 0,54 × 0,49) e supera o HAR na volatilidade por **margem pequena**
-#   (≈ 2% no RMSE e 3% no MAE), diferença que o teste de Diebold-Mariano por pregão (seção 2.9) separa do ruído. Em volatilidade, a **simplicidade venceu**: a rede de uma camada oculta com 32 neurônios foi a melhor na ablação.
-# - **Normalização visível e dentro do modelo** (`Normalization.adapt` só no treino): as três redes receberam entradas em escala comparável, e a API de inferência recebe valores **brutos**, sem *skew* de pré-processamento.
-# - **Métricas escolhidas pelo problema**, não pelo costume: PR-AUC, KS e custo para o crédito desbalanceado (a acurácia da classe majoritária engana); RMSE/MAE **em unidades naturais** e QLIKE para a volatilidade.
-# - **Comparar com baselines simples** evitou conclusões falsas: a regressão logística no crédito e o HAR na volatilidade são adversários sérios, e o ganho do MLP sobre eles é medido, não presumido.
-# - **Ablação curta e rastreável** (largura × profundidade × 3 seeds, com e sem `class_weight`, Huber × MSE) com a **regra do 1 erro-padrão**: escolher a rede mais simples indistinguível da melhor.
-# - **Validação cronológica com embargo** na volatilidade (70/15/15 por data, 5 pregões de purge) e um **teste unitário de ausência de vazamento** nas features.
-# - **Limiar por custo** no crédito: trocar o corte arbitrário 0,5 por um custo explícito (ilustrativo) reduz o custo esperado por cliente em relação a "aprovar todos" e ao corte 0,5.
+# - **Ganhos pequenos, mas medidos:** o MLP supera a regressão logística no crédito (ROC-AUC ≈ 0,77 contra 0,72 e PR-AUC ≈ 0,54 contra 0,49) e supera o HAR na volatilidade por uma margem pequena (≈ 2% no RMSE e 3% no MAE), diferença que o teste estatístico por pregão (seção 2.9) separa do ruído. Na volatilidade, a simplicidade venceu: a rede com 1 camada oculta de 32 neurônios foi a melhor na ablação.
+# - **Normalização dentro do modelo** (`Normalization.adapt` só no treino): as três redes receberam entradas em escala comparável, e a normalização vai junto com o modelo.
+# - **Métricas escolhidas pelo problema:** PR-AUC, KS e custo no crédito desbalanceado (a acurácia da classe majoritária engana); RMSE e MAE em unidades naturais e QLIKE na volatilidade.
+# - **Comparar com baselines simples** evitou conclusões erradas: a regressão logística no crédito e o HAR na volatilidade são adversários sérios, e o ganho do MLP sobre eles foi medido.
+# - **Ablação curta e rastreável** (largura × profundidade × 3 seeds, com e sem `class_weight`, Huber × MSE) com a regra do 1 erro-padrão: escolher a rede mais simples entre as que não se distinguem da melhor.
+# - **Divisão por data com intervalo de 5 pregões** na volatilidade (70/15/15 por data) e um teste de que as features não usam dados do futuro.
+# - **Limiar por custo** no crédito: trocar o corte arbitrário 0,5 por um custo explícito (de exemplo) reduz o custo esperado por cliente em relação a aprovar todos e ao corte 0,5.
 #
-# ## 4.5 Limitações (leia antes de confiar em qualquer número)
+# ## 4.5 Limitações (leia antes de confiar nos números)
 #
-# - **Viés de sobrevivência:** o S&P 500 do dataset contém apenas as empresas que **estavam no índice em fev/2018**; quem saiu (falência, aquisição) não aparece. Isso tende a **subestimar** a volatilidade e o risco de cauda.
-# - **Período curto e regime único:** cinco anos de uma bolsa em alta quase contínua; o teste (mai/2017 a jan/2018) é **muito calmo**, exceto por um **choque no fim** (fevereiro de 2018) que **nenhuma feature de janeiro conhece**. O desempenho em outro regime (2008, 2020) é desconhecido.
-# - **Deslocamento de regime treino → teste:** o treino é mais agitado que a validação e o teste (as médias do alvo caem), então os baselines e o modelo têm viés de nível; o erro por mês mostra isso.
-# - **Preços ajustados de fonte não auditada** (Kaggle, licença não verificada): splits e spin-offs sem ajuste geram retornos absurdos; descartamos janelas com `|r| > 0,4`, o que também remove alguns eventos reais (AMD, CHK, WMB).
-# - **Alvo ruidoso:** a volatilidade "realizada" de **5 retornos** é uma medida barulhenta da volatilidade verdadeira; por isso o R² no log é baixo por construção e o teto de qualquer modelo é modesto.
-# - **Crédito:** dados de **Taiwan, 2005** (um único banco, antes da crise de 2008); os **custos do limiar (FN = 5 × FP) são ilustrativos**, não de um banco real; a equidade foi medida só por sexo e só em taxas.
-# - **Amostras pequenas nas novas instâncias:** 20 clientes e 12 tickers × 5 dias servem para **ilustrar o uso**, não para estimar desempenho.
+# - **Viés de sobrevivência:** o S&P 500 do dataset só tem as empresas que estavam no índice em fev/2018. Quem saiu (falência, aquisição) não aparece, o que tende a subestimar a volatilidade e o risco de cauda.
+# - **Período curto e um só regime:** cinco anos de bolsa em alta quase contínua. O teste (mai/2017 a jan/2018) é muito calmo, exceto por um choque no fim (fevereiro de 2018) que nenhuma feature de janeiro conhece. Não sabemos como o modelo se sai em outro regime (2008, 2020).
+# - **Deslocamento de regime do treino para o teste:** o treino é mais agitado que a validação e o teste (as médias do alvo caem), então os baselines e o modelo têm viés de nível. O erro por mês mostra isso.
+# - **Preços de fonte não auditada** (Kaggle, licença não confirmada): splits e spin-offs sem ajuste geram retornos absurdos. Descartamos janelas com |r| > 0,4, o que também remove alguns eventos reais (AMD, CHK, WMB).
+# - **Alvo ruidoso:** a volatilidade realizada de 5 retornos é uma medida ruidosa da volatilidade verdadeira, então o R² no log é baixo e o teto de qualquer modelo é modesto.
+# - **Crédito:** dados de Taiwan, de 2005 (um só banco, antes da crise de 2008); os custos do limiar (FN = 5 × FP) são de exemplo, não de um banco real; e a equidade foi medida só por sexo e só em taxas.
+# - **Poucas novas instâncias:** 20 clientes e 12 tickers × 5 dias servem para mostrar o uso, não para estimar desempenho.
 #
 # ## 4.6 Considerações éticas e de uso
 #
-# - **Atributos protegidos:** `SEX` e `MARRIAGE` **não são features** (a Regulation B / ECOA, nos EUA, proíbe sexo e estado civil; a idade só em sistemas empiricamente derivados e sem penalizar idosos). Mesmo assim o modelo
-#   pode reproduzi-los por *proxies*; por isso medimos taxa de aprovação, TPR e FPR por grupo. Medir não é corrigir: uso real exigiria análise jurídica e testes de mitigação.
-# - **Decisões automatizadas:** a LGPD (art. 20) garante ao titular o direito de **solicitar a revisão** de decisões tomadas unicamente com base em tratamento automatizado (⚠️ confirmar o texto no Planalto). Um modelo de crédito
-#   real precisaria de explicabilidade por cliente e de um caminho de contestação.
-# - **Mercado:** os modelos de volatilidade **não são recomendação de investimento**; descrevem risco (agitação), não retorno. Previsões de volatilidade erradas no choque de 2018 mostram como um modelo "calmo" falha justamente quando importa.
-# - **Dados:** o dataset de crédito é CC BY 4.0 (Yeh, 2009); o S&P 500 do Kaggle tem licença não verificada, então **não é redistribuído** e só imagens **sintéticas** vão para fora do notebook.
+# - **Atributos protegidos:** `SEX` e `MARRIAGE` não são features (a Regulation B / ECOA, nos EUA, proíbe sexo e estado civil, e a idade só pode ser usada em sistemas derivados empiricamente e sem penalizar idosos). Mesmo assim o modelo pode reproduzir esses grupos por outras variáveis, por isso medimos taxa de aprovação, TPR e FPR por grupo. Medir não é corrigir: um uso real exigiria análise jurídica e testes de mitigação.
+# - **Decisões automatizadas:** a LGPD (art. 20) garante ao titular o direito de pedir a revisão de decisões tomadas só com base em tratamento automatizado (convém conferir o texto da lei). Um modelo de crédito real precisaria explicar cada decisão e ter um caminho de contestação.
+# - **Mercado:** os modelos de volatilidade não são recomendação de investimento. Eles descrevem risco (agitação), não retorno. As previsões erradas no choque de 2018 mostram como um modelo "calmo" falha justamente quando mais importa.
+# - **Dados:** o dataset de crédito é CC BY 4.0 (Yeh, 2009). Não confirmamos a licença do S&P 500 do Kaggle, então não redistribuímos esses dados.
 #
 # ## 4.7 Próximos passos
 #
-# Corrigir o viés de prever a **mediana** na volatilidade (a saída `exp(E[ln y])` fica abaixo da média por desigualdade de Jensen; um fator de suavização `exp(σ²/2)` aproximaria a média), recalibrar as probabilidades do crédito (Platt/isotônica na validação), repetir o diagnóstico de equidade com outros atributos e limiares, validar a volatilidade com **janela deslizante** (*walk-forward*) em mais regimes e
-# comparar com modelos de volatilidade condicional (GARCH) e com features de opções (VIX por ação) que o dataset não tem.
+# Corrigir o viés de prever a mediana na volatilidade (a saída `exp(E[ln y])` fica abaixo da média pela desigualdade de Jensen, e um fator `exp(σ²/2)` aproximaria a média), recalibrar as probabilidades do crédito (Platt ou isotônica na validação), repetir o diagnóstico de equidade com outros atributos e limiares, validar a volatilidade com janela deslizante (walk-forward) em mais regimes e comparar com modelos de volatilidade condicional (GARCH) e com features de opções (VIX por ação), que o dataset não tem.
 
 # %% [markdown]
 # ## 4.8 Fechamento: versões, hardware e tempo de execução

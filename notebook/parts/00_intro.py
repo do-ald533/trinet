@@ -10,50 +10,40 @@ Variaveis/funcoes compartilhadas: SEED, DATA_DIR, THREADS, part_times, show(), s
 #
 # **Integrantes (nome completo e RA):** *a preencher*
 #
-# > **Aviso (leia primeiro).** Este notebook é um **trabalho de curso, com fins educacionais**. Nada aqui é recomendação de
-# > investimento, e o modelo de crédito **não é** um modelo de decisão de crédito real: os dados são antigos (Taiwan, 2005), os
-# > custos usados para escolher o limiar são **ilustrativos** e o diagnóstico de equidade mostra limitações, não uma solução.
+# > Trabalho de curso, feito só para fins educacionais. Nada aqui é recomendação de investimento, e o modelo de crédito não serve para decidir crédito de verdade: os dados são de Taiwan, de 2005, e os custos usados no limiar são só um exemplo.
 #
 # ## Objetivo
 #
-# Aplicar redes neurais em **TensorFlow/Keras** a três problemas supervisionados de **risco financeiro**, projetando cada arquitetura
-# **do zero** (camada a camada, com `tf.keras.layers`; nada de `keras.applications`, transfer learning ou modelos prontos),
-# escolhendo hiperparâmetros por **evidência** (ablações curtas, comparação com baselines) e **justificando** cada decisão:
+# Neste trabalho aplicamos redes neurais em TensorFlow/Keras a três problemas supervisionados da área de risco financeiro. Montamos cada rede camada a camada com `tf.keras.layers` (sem `keras.applications` e sem transfer learning), escolhemos os hiperparâmetros com testes curtos e justificamos cada escolha em células de texto.
 #
-# | # | Problema | Tipo | Dados | Alvo |
+# | # | Problema | Tipo | Dados | O que a rede prevê |
 # |---|---|---|---|---|
-# | 1 | **Risco de crédito** | Classificação binária (desbalanceada) | *Default of Credit Card Clients* (UCI #350, 30.000 clientes) | inadimplência no mês seguinte |
-# | 2 | **Risco de mercado, via números** | Regressão | S&P 500, 5 anos (505 ações) | volatilidade realizada dos próximos 5 pregões |
-# | 3 | **Risco de mercado, via imagem** | CNN (visão computacional, 3 classes) | gráficos OHLC + volume **renderizados** das mesmas ações | regime de volatilidade (baixa/média/alta) |
+# | 1 | Risco de crédito | Classificação binária | Default of Credit Card Clients (UCI, 30.000 clientes) | se o cliente fica inadimplente no mês seguinte |
+# | 2 | Risco de mercado, com números | Regressão | S&P 500, 5 anos (505 ações) | volatilidade dos próximos 5 pregões |
+# | 3 | Risco de mercado, com imagens | CNN (3 classes) | gráficos de candlestick feitos com as mesmas ações | regime de volatilidade: baixa, média ou alta |
 #
-# As redes 2 e 3 modelam a **mesma grandeza** por duas vias, **números × imagem**. Isso permite fechar com uma pergunta honesta:
-# *o gráfico acrescenta algo além das features numéricas?*
+# As redes 2 e 3 preveem a mesma coisa, uma com números e outra com imagem. No fim comparamos as duas para ver se o gráfico ajuda além dos números.
 #
-# ## Estrutura (mesmo esqueleto nas três seções)
+# ## Organização do notebook
 #
-# 0. Capa, setup e versões (esta parte).
-# 1. **Crédito (classificação):** novas instâncias reservadas → dedup → EDA → divisão estratificada → normalização visível →
-#    ablação → arquitetura final → justificativas → treino → teste (matriz de confusão e relatório) → equidade → novas instâncias.
-# 2. **Volatilidade (regressão):** dados de mercado compartilhados (S&P 500) → features sem vazamento → divisão cronológica →
-#    normalização → ablação → modelo final → RMSE/MAE e margem relativa → erro por período e regime → novas instâncias.
-# 3. **Gráficos de candlestick (CNN):** renderização determinística → ablação de 4 configurações → CNN final → acurácia e comparação com a rede 2.
-# 4. **Conclusões**, comparação com os baselines, limitações e considerações éticas.
-# 5. **Apêndice (fora da área avaliada):** exporta os modelos treinados (ONNX + manifesto + amostras de referência) para uma API de inferência.
+# 0. Capa e configuração.
+# 1. Crédito (classificação): EDA, preparação dos dados, normalização, ablação, rede final, justificativas, treino, teste (matriz de confusão e relatório), equidade e novas instâncias.
+# 2. Volatilidade (regressão): dados do S&P 500, features, divisão por data, normalização, ablação, rede final, RMSE e MAE com a margem relativa, erro por período e novas instâncias.
+# 3. Candlestick (CNN): geração das imagens, ablação, CNN final, acurácia e comparação com a rede 2.
+# 4. Conclusões, limitações e considerações éticas.
 #
 # ## Dados e licenças
 #
-# - **Default of Credit Card Clients** (UCI #350): Yeh, I-C. (2009), DOI 10.24432/C55S3H, licença **CC BY 4.0**. Baixado do repositório da UCI.
-# - **S&P 500, 5 anos** (Kaggle `camnugent/sandp500`): preços diários de fev/2013 a fev/2018. A licença e a origem do arquivo **não foram verificadas**;
-#   por isso os CSVs **nunca são versionados** (ficam em uma pasta de dados fora do repositório) e as imagens usadas fora do notebook são **sintéticas**.
-# - Nenhuma credencial é necessária: os dois downloads são anônimos.
+# - Default of Credit Card Clients (UCI #350): Yeh, I-C. (2009), DOI 10.24432/C55S3H, licença CC BY 4.0. Baixado do repositório da UCI.
+# - S&P 500, 5 anos (Kaggle `camnugent/sandp500`): preços diários de fev/2013 a fev/2018. Não conseguimos confirmar a licença do arquivo, por isso não colocamos esses dados no repositório.
+# - Os dois downloads são anônimos, sem conta.
 
 # %% [markdown]
-# ## Setup: versões, hardware, seeds e threads
+# ## Configuração: versões, hardware, seeds e threads
 #
-# - **Reprodutibilidade:** `keras.utils.set_random_seed(seed)` antes de cada modelo; resultados de ablação em **média ± desvio de 3 seeds**.
-#   Não usamos `enable_op_determinism` (serializa o `tf.data` e não garante reprodução entre máquinas).
-# - **CPU:** o treino roda em CPU (`tensorflow==2.21.0`, sem GPU). A variável de ambiente `TRINET_TF_THREADS` limita as threads do TensorFlow (0 = todas).
-# - **Dados:** `TRINET_DATA_DIR` aponta a pasta de dados brutos (padrão: `data/` ao lado do notebook).
+# - Reprodutibilidade: chamamos `keras.utils.set_random_seed(seed)` antes de cada modelo e, nas ablações, usamos a média e o desvio de 3 seeds.
+# - O treino roda em CPU (TensorFlow 2.21, sem GPU). A variável de ambiente `TRINET_TF_THREADS` limita as threads (0 = todas).
+# - Os dados brutos ficam na pasta indicada por `TRINET_DATA_DIR` (padrão: `data/`, ao lado do notebook).
 
 # %%
 import os

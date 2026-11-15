@@ -14,27 +14,18 @@ Variaveis expostas (todas as da parte levam prefixo ``cnn_`` / ``img_`` / ``CNN_
 # %% [markdown]
 # # Parte 3 · Rede 3: CNN em gráficos de preço (regime de volatilidade)
 #
-# > **Aviso:** conteúdo educacional (trabalho de curso). Nada aqui é recomendação de investimento.
+# > Conteúdo educacional (trabalho de curso). Nada aqui é recomendação de investimento.
 #
 # ## Motivação
 #
-# Jiang, Kelly e Xiu (*(Re-)Imag(in)ing Price Trends*, **Journal of Finance**, 2023) mostram que uma rede convolucional
-# consegue extrair padrões de **imagens de preço**: barras OHLC, média móvel e volume desenhados como pixels, sem nenhuma
-# feature calculada à mão. Aqui seguimos a ideia, com uma diferença importante de **alvo**.
+# Jiang, Kelly e Xiu (*(Re-)Imag(in)ing Price Trends*, Journal of Finance, 2023) mostram que uma rede convolucional consegue achar padrões em imagens de preço: barras OHLC, média móvel e volume desenhados como pixels, sem nenhuma feature calculada à mão. Seguimos essa ideia, mas com um alvo diferente.
 #
-# - **Direção (sobe/desce) é quase imprevisível** em horizonte curto: o ganho reportado no artigo aparece em carteiras
-#   (muitas ações, custos, rebalanceamento), e réplicas menores concluem que a CNN não passa de "chute" em acerto direcional.
-#   Mostramos isso numa célula de sanidade ao final da seção.
-# - **Volatilidade é persistente** (agrupamentos de volatilidade: dias agitados seguem dias agitados) e, por isso, **previsível**.
-#   O alvo é o **regime de volatilidade dos próximos 5 pregões**: `baixa`, `media` ou `alta`, definidos pelos **tercis** de
-#   `y = sqrt(252 · média(r²_{t+1..t+5}))` calculados **só no treino**.
+# - **Direção (sobe/desce)** é quase imprevisível em horizonte curto. O ganho do artigo aparece em carteiras (muitas ações, custos, rebalanceamento), e réplicas menores concluem que a CNN não passa de chute na direção. Mostramos isso numa célula de checagem no fim da seção.
+# - **Volatilidade** é persistente (dias agitados seguem dias agitados) e por isso é previsível. O alvo é o regime de volatilidade dos próximos 5 pregões: `baixa`, `media` ou `alta`, definidos pelos tercis de `y = sqrt(252 · média(r²_{t+1..t+5}))`, calculados só no treino.
 #
-# Esta é a **mesma grandeza** da Rede 2 (volatilidade, regressão), agora lida **a partir da imagem**. A pergunta da conclusão é:
-# *o gráfico acrescenta algo além das features numéricas?*
+# É a mesma grandeza da Rede 2 (regressão), agora lida a partir da imagem. A pergunta da conclusão é: o gráfico acrescenta algo além das features numéricas?
 #
-# **Tarefa:** imagem 64×64×3 (20 pregões) → 3 classes. **Métrica exigida:** acurácia (acaso = 1/3 ≈ 33,3%).
-# **Restrições do enunciado:** a rede é montada **do zero**, camada a camada, com `tf.keras.layers` (nada de `keras.applications`
-# nem transfer learning).
+# **Tarefa:** imagem 64×64×3 (20 pregões) → 3 classes. **Métrica exigida:** acurácia (acaso = 1/3 ≈ 33,3%). Como pede o enunciado, a rede é montada do zero, camada a camada, com `tf.keras.layers` (sem `keras.applications` e sem transfer learning).
 
 # %%
 import gc
@@ -68,24 +59,17 @@ keras.utils.set_random_seed(CNN_SEED)
 print(f"TensorFlow {tf.__version__} | Keras {keras.__version__} | threads intra-op: {tf.config.threading.get_intra_op_parallelism_threads() or 'auto'}")
 
 # %% [markdown]
-# ## 3.1 Do preço à imagem: rasterização determinística em NumPy
+# ## 3.1 Do preço à imagem: desenhando o gráfico em NumPy
 #
-# Cada amostra é uma **janela de 20 pregões** desenhada em **64×64×3 pixels** (`uint8`, valores 0 ou 255, **sem antialiasing**
-# e sem matplotlib, para que o mesmo gráfico dê exatamente os mesmos pixels no treino e na API):
+# Cada amostra é uma janela de 20 pregões desenhada em 64×64×3 pixels (`uint8`, valores 0 ou 255, sem antialiasing e sem matplotlib), para que o mesmo gráfico sempre gere exatamente os mesmos pixels.
 #
 # | canal | conteúdo | desenho |
 # |---|---|---|
-# | 0 (R) | **barras OHLC** | traço vertical *high-low* no pixel central do dia; *tick* de abertura à esquerda, de fechamento à direita; 3 px por dia |
-# | 1 (G) | **média móvel** de 20 pregões do fechamento | linha contínua (as 19 linhas anteriores à janela só "aquecem" a média) |
-# | 2 (B) | **volume** | barras de 1 px nas 16 linhas de baixo, normalizadas pelo maior volume da janela |
+# | 0 (R) | barras OHLC | traço vertical high-low no pixel central do dia; marca de abertura à esquerda e de fechamento à direita; 3 px por dia |
+# | 1 (G) | média móvel de 20 pregões do fechamento | linha contínua (as 19 linhas anteriores à janela só servem para aquecer a média) |
+# | 2 (B) | volume | barras de 1 px nas 16 linhas de baixo, normalizadas pelo maior volume da janela |
 #
-# Os três canais são independentes (R, G e B de uma imagem PNG); assim o preço usa a altura toda e o volume não "cobre" as
-# barras. Os preços entram em **log-preço** (retornos iguais viram deslocamentos iguais). O que resta decidir é a **escala
-# vertical**: (a) **por janela**, mínimo e máximo de cada janela viram o topo e a base (como em Jiang-Kelly-Xiu), ou (b) **fixa**,
-# com um intervalo constante de log-preço para as 64 linhas, centrado no ponto médio da janela. A escolha afeta justamente o
-# que a rede consegue ver da **volatilidade**, então ela sai de um **piloto curto** (mais abaixo), não de opinião.
-#
-# O código abaixo é a cópia inline de `tools/render_chart.py` (o apêndice do notebook testa que as duas cópias dão arrays idênticos).
+# Os três canais são independentes (R, G e B), então o preço usa a altura toda e o volume não cobre as barras. Os preços entram em log (retornos iguais viram deslocamentos iguais). Falta decidir a escala vertical: (a) por janela, em que o mínimo e o máximo de cada janela viram o topo e a base (como em Jiang-Kelly-Xiu), ou (b) fixa, com um intervalo constante de log-preço para as 64 linhas, centrado no meio da janela. Essa escolha muda o que a rede enxerga da volatilidade, então ela sai de um piloto curto (mais abaixo), e não de opinião.
 
 # %%
 import struct
@@ -290,12 +274,7 @@ plt.show()
 # %% [markdown]
 # ## 3.2 Piloto: qual escala vertical preserva a informação de volatilidade?
 #
-# Com a escala **por janela**, uma janela calma e uma agitada com a mesma forma viram a mesma imagem (o zoom é automático) e a
-# amplitude absoluta, que é justamente a volatilidade, se perde. Com a escala **fixa**, barras longas = ação agitada, mas
-# uma janela muito calma ocupa poucas linhas (resolução) e uma muito agitada pode sair da tela (recorte). O intervalo fixo
-# também precisa ser escolhido. O piloto abaixo treina uma CNN **pequena** (8/16/32 filtros) por poucas épocas em
-# **6 mil imagens de treino** e mede a acurácia em **3 mil imagens de validação** (o teste não é tocado), para
-# `scale="window"` e quatro intervalos fixos. Roda em poucos minutos; `CNN_RUN_PILOT = False` pula a execução.
+# Com a escala por janela, uma janela calma e uma agitada com o mesmo formato viram a mesma imagem (o zoom é automático), e a amplitude absoluta, que é justamente a volatilidade, se perde. Com a escala fixa, barras longas indicam uma ação agitada, mas uma janela muito calma ocupa poucas linhas (pouca resolução) e uma muito agitada pode sair da tela (recorte). O intervalo fixo também precisa ser escolhido. O piloto abaixo treina uma CNN pequena (8/16/32 filtros) por poucas épocas, com 6 mil imagens de treino, e mede a acurácia em 3 mil imagens de validação (o teste não é usado), para `scale="window"` e quatro intervalos fixos. Roda em poucos minutos, e `CNN_RUN_PILOT = False` pula a execução.
 
 # %%
 CNN_RUN_PILOT = True
@@ -373,37 +352,23 @@ cnn_pilot_table.style.format({"val acc (melhor época)": "{:.3f}", "desvio": "{:
 # %% [markdown]
 # ### Decisão do piloto
 #
-# **Como ler a tabela.** Com 6 mil imagens, 8 épocas e 2 seeds, o desvio entre seeds (coluna `desvio`) é da mesma ordem que as diferenças entre
-# os intervalos fixos: **não dá para eleger um vencedor entre 0,15 e 0,45 só pela acurácia**. O que se repete, nesta tabela e em execuções
-# exploratórias anteriores com outros tamanhos de amostra, é que **a escala por janela fica abaixo das escalas fixas**, que é o que a
-# teoria prevê (ela apaga a amplitude, que é o próprio sinal de volatilidade). Por isso a decisão entre os intervalos fixos usa também as
-# duas colunas determinísticas: a fração de janelas **recortadas** (saem da tela) e a **resolução** (px por 1% de preço).
+# **Como ler a tabela.** Com 6 mil imagens, 8 épocas e 2 seeds, o desvio entre seeds (coluna `desvio`) é da mesma ordem que as diferenças entre os intervalos fixos, então não dá para escolher um vencedor entre 0,15 e 0,45 só pela acurácia. O que se repete, nesta tabela e em execuções anteriores com outros tamanhos de amostra, é que a escala por janela fica abaixo das escalas fixas, o que bate com a teoria (ela apaga a amplitude, que é o próprio sinal de volatilidade). Por isso a escolha entre os intervalos fixos usa também duas colunas que não dependem do treino: a fração de janelas recortadas (que saem da tela) e a resolução (pixels por 1% de preço).
 #
-# - `0,15` recorta cerca de **15% das janelas** (e quase 3 em cada 10 das janelas de volatilidade `alta`), justamente a classe que queremos
-#   reconhecer: o gráfico "satura" e uma janela agitada vira outra igualmente cortada. Descartado.
-# - `0,45` quase nunca recorta (≈ 0,1–0,2%), mas gasta só ≈ 1,4 px por 1% de preço: um dia calmo (±0,5%) fica quase invisível. Descartado.
-# - `0,20` recorta ≈ 6% e `0,30` pouco mais de 1%. **Escolha: `0,30`** (ln da razão máx/mín da janela, ≈ 35% de amplitude): o recorte é raro (≈ 1–1,5% das janelas), a resolução
-#   (≈ 2,1 px por 1%) ainda separa os regimes e a janela típica (mediana ≈ 9% de amplitude) ocupa umas 19 linhas de 64.
+# - `0,15` recorta cerca de 15% das janelas (e quase 3 em cada 10 das janelas de volatilidade `alta`, justamente a classe que queremos reconhecer): o gráfico satura. Descartado.
+# - `0,45` quase nunca recorta (≈ 0,1–0,2%), mas gasta só ≈ 1,4 px por 1% de preço, e um dia calmo (±0,5%) fica quase invisível. Descartado.
+# - `0,20` recorta ≈ 6% e `0,30` pouco mais de 1%. **Escolha: `0,30`** (ln da razão máx/mín da janela, ≈ 35% de amplitude): o recorte é raro (≈ 1–1,5% das janelas), a resolução (≈ 2,1 px por 1%) ainda separa os regimes e a janela típica (mediana ≈ 9% de amplitude) ocupa umas 19 linhas de 64.
 #
-# `CHART_SPAN = 0.30` e `CHART_SCALE = "fixed"` ficam como padrão do renderizador (`tools/render_chart.py`), o mesmo código que a API de
-# serving e o gerador dos *golden samples* usam. O piloto usa 6 mil imagens, então a escolha é uma **decisão de projeto fundamentada em
-# propriedades da imagem**, não um *grid search* de acurácia.
+# `CHART_SPAN = 0.30` e `CHART_SCALE = "fixed"` ficam como padrão do desenho. Como o piloto usa só 6 mil imagens, essa é uma decisão de projeto baseada nas propriedades da imagem, e não uma busca por acurácia.
 
 # %% [markdown]
 # ## 3.3 Construção do conjunto de dados
 #
-# Regras (as mesmas da Rede 2: V3.1 a V3.8, aplicadas pelas funções da parte 15):
+# Regras (as mesmas da Rede 2, aplicadas pelas funções da parte 2A):
 #
-# 1. **Amostra válida em `t`:** janela `[t-59, t+5]` contígua e sem `|r| > 0,4` (`sp["valid"]`); assim cada imagem tem o alvo
-#    definido e as mesmas amostras podem ser comparadas com a Rede 2.
-# 2. **Divisão cronológica** com embargo de 5 pregões (`split`): treino até ago/2016, validação até mai/2017, teste de
-#    mai/2017 a jan/2018; os 5 últimos pregões ficam para as previsões "fora da amostra" no fim da seção.
-# 3. **Classes:** tercis de `y` calculados **só nas amostras válidas de treino** (`cnn_edges`): `baixa` (< 14,4% a.a.),
-#    `media` (14,4% a 22,9%) e `alta` (> 22,9%). O treino fica ~balanceado por construção; a validação e o teste **não** (o
-#    mercado mudou de regime), e isso aparece na tabela de balanceamento.
-# 4. **Amostragem com passo:** janelas de pregões vizinhos quase não diferem (19 de 20 dias em comum), e ~585 mil imagens não
-#    cabem na CPU em minutos. Mantemos 1 de cada `CNN_STRIDE` pregões de cada ticker (com deslocamento por ticker), o mesmo passo em
-#    treino, validação e teste, para chegar a **~60 mil imagens de treino**. Cada imagem é guardada em `uint8` (12 KB): ~1 GB no total.
+# 1. **Amostra válida em `t`:** janela `[t-59, t+5]` contínua e sem `|r| > 0,4` (`sp["valid"]`), para que cada imagem tenha alvo e possa ser comparada com a Rede 2.
+# 2. **Divisão por data** com 5 pregões de intervalo (`split`): treino até ago/2016, validação até mai/2017 e teste de mai/2017 a jan/2018. Os 5 últimos pregões ficam para as previsões fora da amostra no fim da seção.
+# 3. **Classes:** tercis de `y` calculados só com as amostras válidas do treino (`cnn_edges`): `baixa` (< 14,4% ao ano), `media` (14,4% a 22,9%) e `alta` (> 22,9%). O treino fica quase balanceado por construção, e a validação e o teste não (o mercado mudou de regime), como mostra a tabela de balanceamento.
+# 4. **Amostragem com passo:** janelas de pregões vizinhos quase não mudam (19 de 20 dias em comum) e ~585 mil imagens não cabem na CPU. Mantemos 1 de cada `CNN_STRIDE` pregões de cada ticker (com deslocamento por ticker), com o mesmo passo no treino, na validação e no teste, e chegamos a ~60 mil imagens de treino. Cada imagem é guardada em `uint8` (12 KB), cerca de 1 GB no total.
 
 # %%
 CNN_TRAIN_TARGET = 60_000
@@ -472,21 +437,15 @@ plt.show()
 # %% [markdown]
 # ## 3.4 A CNN, camada a camada
 #
-# **Reescala visível.** A API entrega os pixels como `float32` em 0–255 e a **primeira camada do modelo é `Rescaling(1/255)`**:
-# a normalização (exigida pelo enunciado, item 3.1.1) fica *dentro* do grafo e, portanto, vai junto na exportação.
+# **Reescala.** Os pixels entram como `float32` de 0 a 255, e a primeira camada do modelo é `Rescaling(1/255)`: é a normalização que o enunciado pede (item 3.1.1), e ela fica dentro do modelo.
 #
-# **Ponto de partida** (blocos conv → pool, depois uma cabeça densa):
+# **Ponto de partida** (blocos de convolução e pooling, depois uma parte densa):
 #
-# `Input(64,64,3)` → `Rescaling(1/255)` → 3 × [`Conv2D(3×3, same)` → `BatchNormalization` → `ReLU` → `MaxPooling2D(2)`] →
-# `Flatten` → `Dense(64, relu)` → `Dropout(0,5)` → `Dense(3, softmax)`
+# `Input(64,64,3)` → `Rescaling(1/255)` → 3 × [`Conv2D(3×3, same)` → `BatchNormalization` → `ReLU` → `MaxPooling2D(2)`] → `Flatten` → `Dense(64, relu)` → `Dropout(0,5)` → `Dense(3, softmax)`
 #
-# Tamanho dos mapas: 64×64 → 32×32 → 16×16 → 8×8; o `Flatten` vê 8·8·32 = 2.048 valores. A largura (8/16/32 filtros) sai
-# da medição do tempo de época na CPU (célula abaixo): o objetivo é ≲ 60 s por época com ~60 mil imagens.
+# Tamanho dos mapas: 64×64 → 32×32 → 16×16 → 8×8, então o `Flatten` recebe 8·8·32 = 2.048 valores. A largura (8/16/32 filtros) vem de medir o tempo de uma época na CPU (célula abaixo): o objetivo é ficar em no máximo ≈ 60 s por época com ~60 mil imagens.
 #
-# A **única camada própria** é `VerticalJitter`, usada só na ablação de *augmentation*: desloca verticalmente, de até ±3 linhas,
-# os canais de preço (OHLC e média móvel) **sem tocar no volume**. Somar uma constante ao log-preço **não altera a volatilidade**,
-# então o rótulo continua válido. Já espelhar horizontalmente (`RandomFlip`) inverteria o eixo do tempo e trocaria a abertura
-# pelo fechamento, o que **quebra a semântica do gráfico**; por isso não é usado.
+# A única camada que escrevemos é a `VerticalJitter`, usada só na ablação de augmentation: ela desloca verticalmente, em até ±3 linhas, os canais de preço (OHLC e média móvel), sem mexer no volume. Somar uma constante ao log-preço não muda a volatilidade, então o rótulo continua válido. Já espelhar na horizontal (`RandomFlip`) inverteria o tempo e trocaria abertura por fechamento, o que quebra o sentido do gráfico, então não usamos.
 
 # %%
 class VerticalJitter(layers.Layer):
@@ -596,9 +555,7 @@ build_cnn(**CNN_BASE_CFG).summary()
 # %% [markdown]
 # ### Dimensionando para a CPU: tempo da primeira época
 #
-# O orçamento é **≲ 60 s por época** com ~60 mil imagens. Para escolher a largura, cronometramos uma época de 6 mil imagens
-# (depois de uma época de aquecimento) para 4 larguras do mesmo desenho e extrapolamos para o treino inteiro. Depois, a 1ª época
-# **real** da configuração base no treino completo.
+# O orçamento é de no máximo ≈ 60 s por época com ~60 mil imagens. Para escolher a largura, cronometramos uma época com 6 mil imagens (depois de uma época de aquecimento) para 4 larguras do mesmo desenho e estimamos o tempo para o treino inteiro. Depois medimos a 1ª época real da configuração base no treino completo.
 
 # %%
 _probe = slice(0, 6_000)
@@ -620,49 +577,29 @@ del _m
 #
 # ### Justificativa: Arquitetura (Rede 3)
 #
-# - **Ativação das ocultas: ReLU** (nas convoluções e na densa). Não satura para entradas positivas (gradiente 1), é barata na CPU e produz
-#   mapas **esparsos**, o que combina com imagens de pixels 0/255. `sigmoid` e `tanh` saturam e atrasam o treino de redes mais fundas; `softmax`
-#   só faz sentido na saída. A `BatchNormalization` antes de cada ReLU estabiliza a escala dos mapas (o gráfico tem muitos pixels apagados e
-#   poucos acesos, então a distribuição das ativações é bem assimétrica).
-# - **Profundidade × largura das convoluções:** 3 blocos `Conv2D(3×3)` com **8, 16 e 32 filtros** (a largura dobra a cada `MaxPooling2D`, que divide
-#   a área por 4, então o custo por camada fica parecido). Cada bloco aumenta o **campo receptivo**: ao fim do terceiro, um neurônio vê
-#   ~22 px (≈ 7 pregões de 3 px); o `Flatten` + `Dense(64)` integram a janela inteira de 20 pregões. A largura foi limitada pelo **orçamento de
-#   CPU** (≲ 60 s por época): a tabela de dimensionamento acima mostra o tempo por época subindo de ≈ 30–40 s (8/16/32) para ≈ 70 s (16/32/64) e
-#   ≈ 160–180 s (32/64/128) no treino todo (os segundos variam com a carga da máquina). A **ablação** (próxima seção) compara a base com uma versão
-#   **mais rasa** (2 blocos) e uma **mais larga** (16/32/64).
-# - **Cabeça densa:** `Flatten` (8·8·32 = 2.048 valores) → `Dense(64, relu)` → `Dropout`. Essa camada concentra ~95% dos parâmetros da base e é o
-#   principal vetor de *overfitting*, por isso o `Dropout(0,5)` (e a variação 0,25 na ablação).
-# - **Saída: `Dense(3, softmax)`.** As três classes (`baixa`, `media`, `alta`) são **mutuamente exclusivas**; o `softmax` devolve uma distribuição de
-#   probabilidade que soma 1, e é essa distribuição que a API devolve.
+# - **Ativação das camadas ocultas: ReLU** (nas convoluções e na densa). Ela não satura para entradas positivas (gradiente 1), é barata na CPU e gera mapas esparsos, o que combina com imagens de pixels 0/255. `sigmoid` e `tanh` saturam e atrasam o treino de redes mais fundas, e a `softmax` só faz sentido na saída. A `BatchNormalization` antes de cada ReLU estabiliza a escala dos mapas (o gráfico tem muitos pixels apagados e poucos acesos, então a distribuição das ativações é bem assimétrica).
+# - **Profundidade e largura das convoluções:** 3 blocos `Conv2D(3×3)` com 8, 16 e 32 filtros (a largura dobra a cada `MaxPooling2D`, que divide a área por 4, então o custo por camada fica parecido). Cada bloco aumenta o campo receptivo: no fim do terceiro, um neurônio vê ~22 px (≈ 7 pregões de 3 px), e o `Flatten` com o `Dense(64)` juntam a janela inteira de 20 pregões. A largura foi limitada pelo orçamento de CPU (≲ 60 s por época): a tabela de dimensionamento acima mostra o tempo por época subindo de ≈ 30–40 s (8/16/32) para ≈ 70 s (16/32/64) e ≈ 160–180 s (32/64/128) no treino todo (os segundos variam com a carga da máquina). A ablação (próxima seção) compara a base com uma versão mais rasa (2 blocos) e uma mais larga (16/32/64).
+# - **Parte densa:** `Flatten` (8·8·32 = 2.048 valores) → `Dense(64, relu)` → `Dropout`. Essa camada concentra ~95% dos parâmetros da base e é o principal ponto de overfitting, por isso usamos `Dropout(0,5)` (e testamos 0,25 na ablação).
+# - **Saída: `Dense(3, softmax)`.** As três classes (`baixa`, `media`, `alta`) são exclusivas, e a `softmax` devolve probabilidades que somam 1.
 #
 # ### Justificativa: Compilação (Rede 3)
 #
-# - **Loss: `sparse_categorical_crossentropy`.** É a entropia cruzada (log-verossimilhança) para o `softmax`; "sparse" porque os rótulos são os inteiros
-#   0/1/2, sem precisar de one-hot. Penaliza com força apostas confiantes e erradas, e dá probabilidades utilizáveis.
-# - **Otimizador: Adam** (taxa 1e-3), com `ReduceLROnPlateau` (×0,5 após 2 épocas sem melhora da loss de validação) e `EarlyStopping`
-#   (paciência 4, `restore_best_weights`). O Adam adapta o passo por parâmetro, o que ajuda com a escala irregular dos mapas de uma CNN do zero;
-#   a redução por platô troca "quantas épocas treinar" por um critério medido na validação. A varredura curta da seção seguinte compara 3e-4, 1e-3 e
-#   3e-3 (3 seeds cada) e é lida com cuidado: o desvio entre seeds é grande nesse tamanho de amostra.
-# - **Métrica: acurácia** (exigida pelo enunciado). O treino tem as 3 classes quase balanceadas (por construção dos tercis), então a acurácia é
-#   informativa e o piso é 1/3. Como a validação e o teste **não** são balanceados (o mercado mudou de regime), a avaliação final também mostra a
-#   **matriz de confusão** e o relatório por classe (precisão, revocação e F1), além da comparação com baselines.
+# - **Loss: `sparse_categorical_crossentropy`.** É a entropia cruzada para a `softmax`; "sparse" porque os rótulos são os inteiros 0, 1 e 2, sem precisar de one-hot. Ela pune bastante as apostas erradas feitas com muita confiança e dá probabilidades utilizáveis.
+# - **Otimizador: Adam** (taxa 1e-3), com `ReduceLROnPlateau` (×0,5 após 2 épocas sem melhora da loss de validação) e `EarlyStopping` (paciência 4, `restore_best_weights`). O Adam ajusta o passo de cada parâmetro, o que ajuda numa CNN feita do zero, com mapas de escalas irregulares, e a redução por platô troca "quantas épocas treinar" por um critério medido na validação. Na seção seguinte comparamos as taxas 3e-4, 1e-3 e 3e-3 (3 seeds cada), lendo o resultado com cuidado porque o desvio entre seeds é grande com tão poucas imagens.
+# - **Métrica: acurácia** (exigida pelo enunciado). O treino tem as 3 classes quase balanceadas (por causa dos tercis), então a acurácia é informativa e o piso é 1/3. Como a validação e o teste não são balanceados (o mercado mudou de regime), na avaliação final também mostramos a matriz de confusão e o relatório por classe (precisão, revocação e F1), além da comparação com baselines.
 
 # %% [markdown]
 # ## 3.6 Ablação de configurações
 #
-# Em vez de um *tuner*, uma **ablação manual** com 5 configurações, avaliadas por **acurácia de validação** (média ± desvio de **3 seeds**), em
-# **12 mil imagens de treino** e até 8 épocas (`EarlyStopping` com paciência 3 e `restore_best_weights`), para caber no orçamento de CPU. O
-# resultado é um **ranking de configurações**, não a acurácia final (a escolhida é re-treinada no treino inteiro). A regra de escolha é fixada
-# antes de olhar o teste: entre as configurações que **cabem no orçamento de CPU** (≲ 60 s por época no treino todo, pela tabela da seção 3.4), a de maior
-# acurácia média de validação; se houver empate dentro de 0,5 pp, a de menos parâmetros.
+# Em vez de um tuner, fizemos uma ablação manual com 5 configurações, avaliadas pela acurácia de validação (média ± desvio de 3 seeds), com 12 mil imagens de treino e até 8 épocas (`EarlyStopping` com paciência 3 e `restore_best_weights`), para caber na CPU. O resultado é um ranking de configurações, e não a acurácia final (a escolhida é treinada de novo no treino inteiro). A regra de escolha foi fixada antes de olhar o teste: entre as configurações que cabem no orçamento de CPU (≲ 60 s por época no treino todo, pela tabela da seção 3.4), a de maior acurácia média de validação; se houver empate dentro de 0,5 ponto percentual, a de menos parâmetros.
 #
 # | config | o que muda em relação à base (`8/16/32`, `Dropout(0,5)`) |
 # |---|---|
-# | **base** | ponto de partida |
-# | **dropout 0,25** | menos regularização na cabeça densa |
-# | **augmentation (jitter ±3 linhas)** | `VerticalJitter` só no treino: desloca o preço verticalmente (preserva a volatilidade) |
-# | **mais rasa (2 blocos)** | `8/16` filtros; o `Flatten` passa a ver 16·16·16 = 4.096 valores (mais parâmetros na cabeça densa, menos convoluções) |
-# | **mais larga (16/32/64)** | dobra os filtros; **referência** para ver se mais capacidade ajuda. Custa ≈ 2× o tempo por época e estoura o orçamento, então **não concorre** à escolha |
+# | base | ponto de partida |
+# | dropout 0,25 | menos regularização na parte densa |
+# | augmentation (jitter ±3 linhas) | `VerticalJitter` só no treino: desloca o preço na vertical (preserva a volatilidade) |
+# | mais rasa (2 blocos) | `8/16` filtros; o `Flatten` passa a receber 16·16·16 = 4.096 valores (mais parâmetros na parte densa, menos convoluções) |
+# | mais larga (16/32/64) | dobra os filtros e serve de referência para ver se mais capacidade ajuda. Custa ≈ 2× o tempo por época e estoura o orçamento, então não concorre à escolha |
 
 # %%
 CNN_ABL_TRAIN, CNN_ABL_EPOCHS, CNN_ABL_SEEDS = 12_000, 8, (0, 1, 2)
@@ -703,8 +640,7 @@ cnn_ablation.style.format({"parâmetros": "{:,d}", "val acc (média)": "{:.3f}",
 # %% [markdown]
 # ### Taxa de aprendizado (varredura curta na configuração base)
 #
-# Mesmo subconjunto, mesmas épocas e **as mesmas 3 seeds** da ablação, para dar **evidência** (e não só convenção) à escolha da taxa do
-# Adam. A linha de `1e-3` reaproveita as execuções da configuração `base` da ablação (idênticas em tudo), então só 2 taxas são treinadas.
+# Mesmo subconjunto, mesmas épocas e mesmas 3 seeds da ablação, para ter evidência (e não só convenção) na escolha da taxa do Adam. A linha de `1e-3` reaproveita as execuções da configuração `base` da ablação (são idênticas), então só 2 taxas são treinadas.
 
 # %%
 CNN_LR_VALUES = (3e-4, 1e-3, 3e-3)
@@ -726,29 +662,19 @@ cnn_lr_table = pd.DataFrame(_rows).set_index("taxa de aprendizado")
 cnn_lr_table.style.format({"val acc (média)": "{:.3f}", "val acc (desvio)": "{:.3f}", "val loss (média)": "{:.3f}", "melhor época (média)": "{:.1f}"})
 
 # %% [markdown]
-# ### Leitura da ablação e da taxa de aprendizado
+# ### O que vemos na ablação e na taxa de aprendizado
 #
-# *(Números da execução de referência; ao reexecutar, mudam na segunda casa decimal. Seeds e ordem dos lotes mexem alguns pontos percentuais com 12 mil imagens.)*
+# *(Números da execução de referência: ao executar de novo, mudam na segunda casa decimal. Seeds e ordem dos lotes mexem alguns pontos percentuais com 12 mil imagens.)*
 #
-# - **Quase tudo empata.** `base`, `augmentation` e `mais rasa` ficam em ≈ 0,507–0,512 de acurácia de validação (desvios de até ≈ 0,7 pp entre seeds) e a `mais larga`
-#   em ≈ 0,516: diferenças menores que o ruído que a própria ablação mede. A única diferença que parece sinal é a de `dropout 0,25`
-#   (≈ 2,5 pp abaixo, com um desvio de ≈ 4 pp: alguma seed oscilou muito), compatível com "menos regularização desestabiliza uma cabeça densa com
-#   131 mil pesos", mas não conclusiva com 3 seeds.
-# - **Capacidade não é o gargalo.** Dobrar os filtros não ajuda de forma relevante e custa ≈ 2× o tempo por época (por isso está fora da escolha). O sinal
-#   de volatilidade no gráfico é grosseiro (amplitude das barras, tamanho do volume) e já cabe em ~140 mil parâmetros.
-# - **Escolha.** Pela regra (dentro do orçamento de tempo, empate de 0,5 pp resolvido por menos parâmetros), fica a `base` (8/16/32, `Dropout(0,5)`).
-#   Em execuções anteriores, com outra ordem de embaralhamento, a média da `base` chegou a cair para ≈ 0,48 (desvio ≈ 4 pp) e a `mais rasa` ficou
-#   na frente; por isso o notebook usa 3 seeds e uma regra de desempate explícita, em vez de apostar numa única corrida.
-# - **Taxa de aprendizado.** `3e-4` e `1e-3` empatam (≈ 0,508 e 0,509). `3e-3` tem média menor e um desvio ≈ 10× maior (instável, a loss de
-#   validação oscila de época a época). `3e-4` só chegaria ao mínimo perto da 8ª época (a "melhor época" média fica em ≈ 7–8 de 8), então custaria mais
-#   épocas para o mesmo resultado. Mantemos **`1e-3` com `ReduceLROnPlateau`**: é o ponto estável e mais rápido da varredura.
+# - **Quase tudo empata.** `base`, `augmentation` e `mais rasa` ficam em ≈ 0,507–0,512 de acurácia de validação (desvios de até ≈ 0,7 pp entre seeds) e a `mais larga` em ≈ 0,516: diferenças menores que o ruído que a própria ablação mede. A única diferença que parece sinal é a do `dropout 0,25` (≈ 2,5 pp abaixo, com desvio de ≈ 4 pp, então alguma seed oscilou muito). Isso combina com a ideia de que menos regularização desestabiliza uma parte densa com 131 mil pesos, mas com 3 seeds não é conclusivo.
+# - **Capacidade não é o gargalo.** Dobrar os filtros não ajuda de forma relevante e custa ≈ 2× o tempo por época (por isso ficou fora da escolha). O sinal de volatilidade no gráfico é grosseiro (amplitude das barras, tamanho do volume) e já cabe em ~140 mil parâmetros.
+# - **Escolha.** Pela regra (dentro do orçamento de tempo, com empate de 0,5 pp resolvido por menos parâmetros), fica a `base` (8/16/32, `Dropout(0,5)`). Em execuções anteriores, com outra ordem de embaralhamento, a média da `base` chegou a cair para ≈ 0,48 (desvio ≈ 4 pp) e a `mais rasa` ficou na frente. Por isso usamos 3 seeds e uma regra de desempate explícita, em vez de apostar numa execução só.
+# - **Taxa de aprendizado.** `3e-4` e `1e-3` empatam (≈ 0,508 e 0,509). `3e-3` tem média menor e desvio ≈ 10× maior (instável: a loss de validação oscila de época a época). `3e-4` só chegaria ao mínimo perto da 8ª época (a melhor época média fica em ≈ 7–8 de 8), então custaria mais épocas para o mesmo resultado. Mantemos `1e-3` com `ReduceLROnPlateau`, que é o ponto estável e mais rápido da varredura.
 
 # %% [markdown]
 # ## 3.7 Treino final e curvas
 #
-# A configuração escolhida é re-treinada **do zero no treino inteiro** (~60 mil imagens), com `EarlyStopping(monitor="val_loss", patience=4,
-# restore_best_weights=True)` e `ReduceLROnPlateau`, até 20 épocas. As curvas mostram treino × validação; a linha pontilhada marca a melhor
-# época (os pesos dessa época são os que seguem para o teste).
+# Treinamos a configuração escolhida do zero com o treino inteiro (~60 mil imagens), com `EarlyStopping(monitor="val_loss", patience=4, restore_best_weights=True)` e `ReduceLROnPlateau`, por até 20 épocas. As curvas mostram treino × validação, e a linha pontilhada marca a melhor época (os pesos dela é que seguem para o teste).
 
 # %%
 # Regra de escolha (fixada antes de olhar o teste): entre as configurações que cabem no orçamento de CPU (tempo por época no treino todo,
@@ -896,9 +822,7 @@ plt.show()
 # ## 3.10 Sanidade: e a direção (sobe/desce)?
 
 # %% [markdown]
-# O mesmo desenho de CNN (e as mesmas imagens), agora com o alvo **direção**: `1` se `ln(close_{t+5} / close_t) > 0`, `0` caso
-# contrário (2 classes, `Dense(2, softmax)`). Treino curto em 12 mil imagens, com os mesmos passos de validação. Se a direção
-# fosse previsível pelo gráfico, a acurácia ficaria bem acima da classe majoritária. O esperado é "perto do acaso".
+# O mesmo desenho de CNN (e as mesmas imagens), agora com o alvo direção: `1` se `ln(close_{t+5} / close_t) > 0` e `0` caso contrário (2 classes, `Dense(2, softmax)`). O treino é curto, com 12 mil imagens. Se o gráfico indicasse a direção, a acurácia ficaria bem acima da classe majoritária. O esperado é ficar perto do acaso.
 
 # %%
 _ret5 = np.log(sp.groupby("ticker", sort=False)["close"].shift(-HORIZON) / sp["close"]).to_numpy()
@@ -931,9 +855,7 @@ del _m
 # ## 3.11 Previsões em novas instâncias (os 5 últimos pregões)
 
 # %% [markdown]
-# Os 5 últimos pregões do dataset (`split.new`) ainda **não têm alvo** (faltam os 5 dias futuros) e não pertencem ao teste:
-# são previsões de verdade "fora da amostra". Sorteamos 12 tickers (seed fixa, `pick_new_tickers`) entre os que têm a janela
-# completa nos 5 dias, e mostramos o gráfico, o regime previsto e as probabilidades.
+# Os 5 últimos pregões do dataset (`split.new`) ainda não têm alvo (faltam os 5 dias seguintes) e não fazem parte do teste: são previsões de verdade, fora da amostra. Sorteamos 12 tickers (seed fixa, `pick_new_tickers`) entre os que têm a janela completa nos 5 dias, e mostramos o gráfico, o regime previsto e as probabilidades.
 
 # %%
 _new_mask = (sp["part"].eq("new") & sp["valid_feat"]).to_numpy()
@@ -967,22 +889,11 @@ display(cnn_new_predictions.pivot(index="ticker", columns="date", values="regime
 # %% [markdown]
 # ## 3.12 Conclusões da Rede 3
 #
-# - **Resultado.** A CNN que lê só o gráfico (20 pregões, 64×64×3) acerta o regime de volatilidade dos 5 pregões seguintes em ≈ 52% das imagens de teste
-#   (acaso = 33,3%; sempre prever `baixa` = 43,8%). A acurácia de teste acompanha a de validação, sem sinal de excesso de ajuste ao conjunto de validação.
-#   O intervalo de 95% (≈ ± 0,9 pp) é **otimista**: as janelas se sobrepõem (passo de 7 pregões, janelas de 20) e as ações do mesmo dia são correlacionadas.
-# - **O gráfico acrescenta pouco além dos números.** Contra a regressão logística com as 3 features de volatilidade (HAR) nas **mesmas imagens**, a CNN fica
-#   ≈ 1 pp acima, com McNemar exato p < 0,01. É uma diferença real nesta amostra, mas pequena: boa parte do que a rede "vê" é a amplitude recente das barras,
-#   que o `ln rv_5`, `ln rv_20` e `ln rv_60` já resumem. Não é um argumento para trocar o modelo tabular pela imagem.
-# - **Onde erra.** A matriz de confusão mostra um classificador quase **binário**: `baixa` é recuperada em ≈ 87% dos casos, `alta` em ≈ 40% e a classe `media`,
-#   que fica entre as duas, em apenas ≈ 14% (a rede a empurra para `baixa`). Parte do erro vem do deslocamento de regime: o treino é balanceado por construção
-#   (tercis), mas validação e teste têm mais dias calmos (≈ 43–44% `baixa`), e o modelo herda um viés para a classe mais calma.
-# - **Direção continua imprevisível.** Com o mesmo desenho e o alvo sobe/desce, a acurácia de teste coincide com a fração de dias de alta (≈ 57,6%): a rede aprende a
-#   responder "sobe" sempre. O ganho existe para a **volatilidade**, não para a direção, como na literatura.
-# - **Limitações.** Um único corte temporal (2013-2018, mercado em geral calmo); uma imagem em baixa resolução, sem antialiasing e com escala vertical fixa; ≈ 57 mil
-#   imagens de treino por limite de CPU (os trabalhos de referência usam milhões); sem custos de transação ou qualquer estratégia de negociação. Nada disto é recomendação
-#   de investimento.
-# - **Para a API.** O modelo exportado (`candlestick-cnn`, ONNX) recebe o **PNG** do gráfico renderizado por `tools/render_chart.py` e devolve as 3 probabilidades.
-#   O apêndice de exportação confere que o caminho de serving (PNG → Pillow → ONNX Runtime) reproduz as previsões do Keras em todo o teste.
+# - **Resultado.** A CNN que lê só o gráfico (20 pregões, 64×64×3) acerta o regime de volatilidade dos 5 pregões seguintes em ≈ 52% das imagens de teste (acaso = 33,3%; sempre prever `baixa` = 43,8%). A acurácia de teste fica perto da de validação (52,0%), então não há sinal de ajuste excessivo à validação. O intervalo de 95% (≈ ± 0,9 pp) é otimista, porque as janelas se sobrepõem (passo de 7 pregões, janelas de 20) e as ações do mesmo dia andam juntas.
+# - **O gráfico acrescenta pouco além dos números.** Contra a regressão logística com as 3 features de volatilidade (HAR) nas mesmas imagens, a CNN fica ≈ 1 pp acima, com McNemar exato p < 0,01. A diferença é real nesta amostra, mas pequena: boa parte do que a rede "vê" é a amplitude recente das barras, que `ln rv_5`, `ln rv_20` e `ln rv_60` já resumem. Não é motivo para trocar o modelo tabular pela imagem.
+# - **Onde erra.** A matriz de confusão mostra um classificador quase binário: `baixa` é reconhecida em ≈ 87% dos casos, `alta` em ≈ 40% e a `media`, que fica entre as duas, em só ≈ 14% (a rede a empurra para `baixa`). Parte do erro vem do deslocamento de regime: o treino é balanceado por construção (tercis), mas a validação e o teste têm mais dias calmos (≈ 43–44% `baixa`), e o modelo herda um viés para a classe mais calma.
+# - **A direção continua imprevisível.** Com o mesmo desenho e o alvo sobe/desce, a acurácia de teste coincide com a fração de dias de alta (≈ 57,6%): a rede aprende a responder "sobe" sempre. O ganho existe para a volatilidade, e não para a direção, como na literatura.
+# - **Limitações.** Um único corte temporal (2013–2018, mercado em geral calmo); imagem de baixa resolução, sem antialiasing e com escala vertical fixa; ≈ 57 mil imagens de treino por limite de CPU (os trabalhos de referência usam milhões); e nada de custos de transação ou estratégia de negociação. Nada disso é recomendação de investimento.
 
 # %%
 try:

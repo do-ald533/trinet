@@ -8,16 +8,13 @@ v_mu/v_sigma, vol_abl, build_features().
 # %% [markdown]
 # # Parte 2 · Risco de mercado: quão agitada vai ser a próxima semana? (regressão)
 #
-# **Problema.** Prever a **volatilidade realizada dos próximos 5 pregões** de uma ação do S&P 500, a partir de informações até o fechamento de hoje.
-# Volatilidade é a medida de risco de mercado mais básica (dimensiona posições, margens e o preço de opções) e é **previsível** (agrupa em ondas: dias agitados
-# tendem a ser seguidos por dias agitados), ao contrário da **direção** do preço, que é quase aleatória (célula de sanidade no fim desta parte).
+# **Problema.** Prever a volatilidade dos próximos 5 pregões de uma ação do S&P 500 usando só informação até o fechamento de hoje. A volatilidade é a medida mais básica de risco de mercado e é previsível, porque vem em ondas (dias agitados costumam ser seguidos por dias agitados). A direção do preço, ao contrário, é quase aleatória (checamos isso numa célula no fim desta parte).
 #
-# - **Alvo:** `y_t = sqrt(252 · média(r²_{t+1..t+5}))`, volatilidade **anualizada**, em fração (0,20 = 20% ao ano).
-# - **Por que prever `ln(y)` e não `y`?** A volatilidade é **positiva e assimétrica à direita** (muitos dias calmos, poucos muito agitados). Em log ela fica ≈ simétrica,
-#   os erros viram **multiplicativos** (errar 0,10 num alvo de 0,10 é grave; num de 0,60, não) e a saída `exp(·)` **garante** previsão positiva.
-# - **Como o modelo é avaliado:** em **unidades naturais** (RMSE, MAE e suas margens relativas à média do alvo, como pede o enunciado) e também por **QLIKE**, a perda padrão em previsão de volatilidade.
+# - **Alvo:** `y_t = sqrt(252 · média(r²_{t+1..t+5}))`, a volatilidade anualizada em fração (0,20 = 20% ao ano).
+# - **Por que prever `ln(y)` e não `y`?** A volatilidade é sempre positiva e assimétrica à direita (muitos dias calmos e poucos muito agitados). Em log ela fica quase simétrica, os erros passam a ser proporcionais (errar 0,10 num alvo de 0,10 é grave, mas num de 0,60 não é) e a saída `exp(·)` garante previsão positiva.
+# - **Como avaliamos:** em unidades naturais (RMSE, MAE e as margens relativas à média do alvo, como o enunciado pede) e também pelo QLIKE, uma perda muito usada em previsão de volatilidade.
 #
-# > **Aviso:** conteúdo educacional. Não é recomendação de investimento.
+# > Conteúdo educacional. Não é recomendação de investimento.
 
 # %% [markdown]
 # ## 2.1 Features (todas calculadas só com dados até o fechamento de `t`)
@@ -32,9 +29,7 @@ v_mu/v_sigma, vol_abl, build_features().
 # | mercado | `mkt_rv_20`: volatilidade média do mercado (média de `rv_20` dos 505 tickers no dia, um proxy tipo VIX) |
 # | calendário | `dow` (dia da semana, *one-hot*) |
 #
-# **Sem vazamento.** Cada feature em `t` usa só linhas com data ≤ `t` do **mesmo ticker** (e, em `mkt_rv_20`, só dados de **fechamento de `t`** dos demais tickers). A construção é
-# **vetorizada por ticker** (`groupby`) e a célula seguinte inclui um **teste unitário**: alterar as linhas futuras não pode mudar nenhuma feature do passado.
-# Amostras sem 60 pregões de histórico (ou com buraco/artefato na janela) **são descartadas**, então **não há valores ausentes e imputação é desnecessária**.
+# **Sem vazamento.** Cada feature em `t` usa só linhas com data menor ou igual a `t` do mesmo ticker (e, em `mkt_rv_20`, só o fechamento de `t` dos outros tickers). A construção é vetorizada por ticker (`groupby`), e a célula seguinte tem um teste: alterar as linhas futuras não pode mudar nenhuma feature do passado. Amostras sem 60 pregões de histórico (ou com buraco na janela) são descartadas, então não há valores ausentes e não precisamos de imputação.
 
 # %%
 _t_part = time.time()
@@ -98,10 +93,9 @@ feat_all = build_features(sp[RAW_COLS])
 print(f"features de {len(feat_all):,} linhas em {time.time() - _t0:.1f}s")
 
 # %% [markdown]
-# ### Teste unitário: nenhuma feature em `t` muda se as linhas futuras forem alteradas
+# ### Teste: nenhuma feature em `t` muda se as linhas futuras mudarem
 #
-# Pegamos 40 tickers, escolhemos uma **data de corte** e **embaralhamos os preços e volumes de todas as linhas posteriores** (multiplicando por fatores aleatórios entre 0,5 e 2).
-# As features das linhas até o corte têm de sair **idênticas** (comparação exata, não aproximada). Como **controle positivo**, o alvo (que olha o futuro de propósito) **deve mudar**.
+# Pegamos 40 tickers, escolhemos uma data de corte e alteramos os preços e volumes de todas as linhas depois dela (multiplicando por fatores aleatórios entre 0,5 e 2). As features das linhas até o corte têm que sair idênticas. Como controle, o alvo (que olha o futuro de propósito) tem que mudar.
 
 # %%
 _tickers = sorted(sp["ticker"].unique())[:: max(1, sp["ticker"].nunique() // 40)][:40]
@@ -127,11 +121,9 @@ assert _past_same and _future_changed and _target_changed, "VAZAMENTO DE FUTURO 
 del _sub, _alt, _f0, _f1, _y0, _y1
 
 # %% [markdown]
-# ## 2.2 Montagem do conjunto, divisão cronológica e EDA
+# ## 2.2 Montagem do conjunto, divisão por data e EDA
 #
-# Usamos exatamente as **amostras válidas** e a **divisão cronológica** da parte 15 (70/15/15 dos pregões, embargo de 5 pregões em cada fronteira, teste termina em T−5).
-# O conjunto é **o mesmo** que a rede 3 (CNN) usará, para a comparação ser justa. Não amostramos linhas de treino: são ≈ 400 mil linhas × 25 colunas (≈ 40 MB) e o MLP treina em
-# poucos minutos em CPU.
+# Usamos as mesmas amostras válidas e a mesma divisão por data da parte 2A (70/15/15 dos pregões, com 5 pregões de intervalo entre as partes e teste terminando 5 pregões antes do fim). O conjunto é o mesmo que a rede 3 (CNN) vai usar. Não amostramos o treino: são ≈ 400 mil linhas × 25 colunas (≈ 40 MB), e o MLP treina em poucos minutos na CPU.
 
 # %%
 vol_df = pd.concat([sp[["date", "ticker", "y", "part", "valid", "valid_feat"]], feat_all], axis=1)
@@ -171,10 +163,7 @@ axes[2].set_title("ln y (treino): quase simétrico")
 plt.show()
 
 # %% [markdown]
-# **Leitura.** A volatilidade vem em **ondas**: picos em ago/2015, jan–fev/2016 e jun/2016 (treino), um mercado **muito calmo** em 2017 (validação e começo do teste) e o **salto de jan–fev/2018**
-# no fim do teste (o alvo das últimas amostras do teste já cobre os primeiros pregões de fevereiro). Duas consequências honestas: (1) o treino é **mais agitado** do que a validação e o teste (as médias da tabela
-# acima mostram isso: 0,215 contra 0,193 e 0,191), então um modelo que "decora a média do treino" erra por viés de nível; (2) o salto de 2018 é um **choque** que nenhuma feature de janeiro conhece, então o erro no fim do teste
-# deve ser grande para **qualquer** modelo. Dois bons motivos para olhar o erro **por período**. O histograma confirma a assimetria de `y` e a quase-simetria de `ln y`.
+# **O que vemos.** A volatilidade vem em ondas: picos em ago/2015, jan–fev/2016 e jun/2016 (treino), um mercado bem calmo em 2017 (validação e começo do teste) e um salto em jan–fev/2018, no fim do teste (o alvo das últimas amostras do teste já cobre os primeiros pregões de fevereiro). Isso tem duas consequências. Primeiro, o treino é mais agitado que a validação e o teste (as médias da tabela acima: 0,215 contra 0,193 e 0,191), então um modelo que só decora a média do treino erra por nível. Segundo, o salto de 2018 é um choque que nenhuma feature de janeiro conhece, então o erro no fim do teste deve ser grande para qualquer modelo. Por isso também olhamos o erro por período. O histograma confirma que `y` é assimétrico e que `ln y` é quase simétrico.
 
 # %%
 corr_ln = sel.assign(ln_y=np.log(sel["y"]))[[*VOL_NUMERIC, "ln_y"]].corr()["ln_y"].drop("ln_y").sort_values()
@@ -185,17 +174,13 @@ plt.show()
 print("Maiores |correlação| com ln y:", ", ".join(f"{k} ({v:+.2f})" for k, v in corr_ln.reindex(corr_ln.abs().sort_values(ascending=False).index).head(6).items()))
 
 # %% [markdown]
-# **Leitura.** As medidas de volatilidade passada (`rv_*`, `pk_*`, `range_5`) e a do mercado (`mkt_rv_20`) dominam, como esperado do **agrupamento de volatilidade**. Um detalhe útil: as janelas **longas** (`rv_60`, `pk_20`)
-# e a amplitude `range_5` correlacionam **mais** que a `rv_5`, porque a vol de 5 retornos é uma estimativa barulhenta. `drawdown_60` (≈ −0,33) e `mom_*` (≈ −0,13) têm correlação **negativa**: ações em queda ficam mais voláteis
-# (efeito alavancagem), um sinal assimétrico que a rede pode explorar. `ret_*d` (com sinal) quase não se correlacionam linearmente com o log da volatilidade (o módulo importa mais que o sinal, e as `rv_*` já o resumem),
-# mas mantemos os retornos defasados para a rede usá-los de forma não linear. A correlação é só **exploratória** (calculada em todas as amostras válidas, sem papel na seleção).
+# **O que vemos.** As medidas de volatilidade passada (`rv_*`, `pk_*`, `range_5`) e a do mercado (`mkt_rv_20`) dominam, como esperado do agrupamento de volatilidade. As janelas longas (`rv_60`, `pk_20`) e a amplitude `range_5` correlacionam mais que a `rv_5`, porque a volatilidade de só 5 retornos é uma estimativa ruidosa. `drawdown_60` (≈ −0,33) e `mom_*` (≈ −0,13) têm correlação negativa: ações em queda ficam mais voláteis. Os retornos defasados `ret_*d`, com sinal, quase não se correlacionam linearmente com o log da volatilidade (o tamanho do movimento importa mais que o sinal), mas mantivemos essas colunas para a rede poder usá-las de forma não linear. A correlação é só exploratória (calculada com todas as amostras válidas) e não entra na escolha das features.
 
 # %% [markdown]
-# ## 2.3 Preparação: normalização visível das features e padronização do alvo (`ln y`)
+# ## 2.3 Preparação: normalização das features e padronização do alvo (`ln y`)
 #
-# - **Features:** `Normalization.adapt()` **só no treino**, embutida no modelo (a API recebe as features brutas). A tabela mostra média e desvio **antes e depois**.
-# - **Alvo:** `ln y` é padronizado com média e desvio **do treino** (`z = (ln y − μ) / σ`). A rede aprende `z`; a **inversão** (`z·σ + μ`, depois `exp`) é feita por camadas no clone de inferência,
-#   que então devolve a volatilidade em fração a.a.
+# - **Features:** `Normalization.adapt()` só no treino, e a camada fica dentro do modelo. A tabela mostra a média e o desvio antes e depois.
+# - **Alvo:** `ln y` é padronizado com a média e o desvio do treino (`z = (ln y − μ) / σ`). A rede aprende `z`, e para voltar à volatilidade em fração ao ano usamos `z·σ + μ` e depois `exp`, no clone de inferência.
 
 # %%
 v_norm = layers.Normalization(axis=-1, name="norm")
@@ -216,19 +201,17 @@ vz_test = (np.log(vy_test) - v_mu) / v_sigma
 print(f"alvo: ln y no treino tem média μ = {v_mu:.4f} e desvio σ = {v_sigma:.4f} | z no treino: média {vz_train.mean():+.3f}, desvio {vz_train.std():.3f} | z na validação: média {vz_val.mean():+.3f}")
 
 # %% [markdown]
-# **Leitura.** As features viram média 0 e desvio 1 no treino. A **média da validação** (última coluna) **não é 0** em várias colunas (`rv_*`, `mkt_rv_20`): é o **deslocamento de regime** (a validação é mais calma que o treino),
-# exatamente o que a regra "estatística só do treino" preserva. Padronizar o alvo ajuda o otimizador (saída de ordem 1) e dá uma escala natural para a perda Huber.
+# **O que vemos.** As features ficam com média 0 e desvio 1 no treino. A média da validação (última coluna) não é 0 em várias colunas (`rv_*`, `mkt_rv_20`): é o deslocamento de regime, já que a validação é mais calma que o treino. É isso que a regra de calcular as estatísticas só com o treino preserva. Padronizar o alvo ajuda o otimizador (a saída fica na ordem de 1) e dá uma escala natural para a perda Huber.
 
 # %% [markdown]
 # ## 2.4 Baselines e métricas
 #
-# Um MLP só vale se vencer alternativas **simples**:
+# Um MLP só vale a pena se vencer alternativas simples:
 # - **Média do treino:** prevê sempre a volatilidade média do treino;
 # - **Persistência:** prevê que a próxima semana terá a volatilidade da última (`rv_5`);
-# - **HAR linear** (Corsi, 2009): regressão linear de `ln y` em `ln rv_5`, `ln rv_20` e `ln rv_60` (semana, mês e trimestre); é o baseline clássico de previsão de volatilidade, difícil de bater.
+# - **HAR linear** (Corsi, 2009): regressão linear de `ln y` em `ln rv_5`, `ln rv_20` e `ln rv_60` (semana, mês e trimestre). É o baseline clássico de previsão de volatilidade e é difícil de bater.
 #
-# **Métricas** (todas em **unidades naturais**, fração a.a., salvo a última): RMSE, MAE, **MAE / média do alvo** e **RMSE / média do alvo** (margem de erro relativa exigida), **QLIKE**
-# `média(y²/ŷ² − ln(y²/ŷ²) − 1)` (assimétrica: subestimar a volatilidade custa mais que superestimar, o que é desejável em risco) e **R² no log**.
+# **Métricas** (em unidades naturais, fração ao ano, menos a última): RMSE, MAE, MAE / média do alvo e RMSE / média do alvo (a margem de erro relativa que o enunciado pede), QLIKE `média(y²/ŷ² − ln(y²/ŷ²) − 1)` (subestimar a volatilidade custa mais que superestimar, o que faz sentido em risco) e R² no log.
 
 # %%
 def qlike(y, yhat) -> float:
@@ -271,11 +254,11 @@ show(val_base)
 print(f"HAR: coeficientes (padronizados) = {np.round(har_beta, 3)} (intercepto, ln rv_5, ln rv_20, ln rv_60)")
 
 # %% [markdown]
-# ## 2.5 Perda Huber: `delta` calibrado em unidades de `ln y` padronizado
+# ## 2.5 Perda Huber: `delta` em unidades de `ln y` padronizado
 #
-# A perda **Huber** é quadrática para erros pequenos e **linear** para os grandes (`|e| > δ`), então **limita a influência de eventos extremos** (o erro de uma ação em dia de balanço pesa menos que o do MSE).
-# O `δ` precisa estar na **escala do ruído**. Calibramos assim: pegamos os **resíduos do HAR no treino** (em unidades de `z`), estimamos o desvio **robusto** `σ_res = 1,4826 · MAD` (insensível a caudas) e usamos
-# **`δ = 1,345 · σ_res`**, a constante clássica de Huber que mantém ≈ 95% da eficiência do MSE quando o ruído é normal e protege contra outliers.
+# A perda Huber é quadrática para erros pequenos e linear para os grandes (`|e| > δ`), então limita a influência de eventos extremos. O `δ` precisa estar na escala do ruído. Calibramos assim: pegamos os resíduos do HAR no treino (em unidades de `z`), estimamos o desvio robusto `σ_res = 1,4826 · MAD` (que não é afetado pelas caudas) e usamos `δ = 1,345 · σ_res`, a constante clássica de Huber, que mantém ≈ 95% da eficiência do MSE quando o ruído é normal.
+#
+# A Huber é uma candidata, não uma decisão: na seção 2.6 comparamos com o MSE (3 seeds) e a escolha final sai da validação.
 
 # %%
 _res = vz_train - har_design(vX_train) @ har_beta
@@ -285,14 +268,11 @@ print(f"resíduo do HAR no treino (em z): desvio = {_res.std():.3f}, desvio robu
 print(f"δ de Huber = 1,345 × {sigma_res:.3f} = {HUBER_DELTA}  (em unidades de ln y padronizado; em ln y cru: {HUBER_DELTA * v_sigma:.3f}, ou seja, ~{(np.exp(HUBER_DELTA * v_sigma) - 1):.0%} de erro multiplicativo)")
 
 # %% [markdown]
-# ## 2.6 Ablação manual: largura × profundidade × perda (3 seeds cada)
+# ## 2.6 Ablação: largura × profundidade × perda (3 seeds cada)
 #
-# Grade: largura da 1ª camada oculta ∈ {32, 64, 128} × profundidade ∈ {1, 2, 3} (cada camada tem a **metade** da anterior), **Huber** em todas, 3 seeds. Depois, na configuração escolhida,
-# **Huber × MSE** (3 seeds). Treino: Adam 1e-3 + `ReduceLROnPlateau` + `EarlyStopping` na loss de validação. A decisão usa a **validação completa**: **QLIKE** como critério principal
-# (padrão em previsão de volatilidade), com a regra do **1 erro-padrão** (a configuração mais simples dentro do ruído da melhor).
+# A grade tem largura da 1ª camada oculta em {32, 64, 128} × profundidade em {1, 2, 3} (cada camada tem metade da anterior), com Huber em todas e 3 seeds. Depois, na configuração escolhida, comparamos Huber × MSE (3 seeds). O treino usa Adam 1e-3, `ReduceLROnPlateau` e `EarlyStopping` na loss de validação. Na decisão usamos a validação completa, com o QLIKE como critério principal (padrão em previsão de volatilidade) e a regra do 1 erro-padrão: ficamos com a configuração mais simples dentro do ruído da melhor.
 #
-# **Regra de amostragem (só na ablação, para caber na CPU):** cada treino da grade usa **1 a cada 3 pregões do treino** (≈ 133 mil linhas). Dias consecutivos são quase redundantes (alvos de 5 dias se sobrepõem
-# e as features mudam pouco de um dia para o outro), então a subamostra por **data** perde pouca informação. O **modelo final** treina com **todas** as linhas de treino.
+# **Amostragem só na ablação (para caber na CPU):** cada treino da grade usa 1 a cada 3 pregões do treino (≈ 133 mil linhas). Dias seguidos são quase redundantes (os alvos de 5 dias se sobrepõem e as features mudam pouco de um dia para o outro), então sortear por data perde pouca informação. O modelo final treina com todas as linhas.
 
 # %%
 def build_vol_mlp(width: int, depth: int, name: str = "volatility_mlp") -> keras.Model:
@@ -384,12 +364,9 @@ VOL_LOSS = "huber" if _q.loc["huber", "mean"] <= _q.loc["mse", "mean"] + _q.loc[
 print(f"DECISÃO: perda = {VOL_LOSS} (QLIKE de validação: Huber {_q.loc['huber', 'mean']:.4f} × MSE {_q.loc['mse', 'mean']:.4f}) | largura {VOL_WIDTH}, profundidade {VOL_DEPTH}")
 
 # %% [markdown]
-# **Leitura da ablação.** Em **RMSE** a grade inteira é praticamente idêntica (≈ 0,129 em todas as células). Em **QLIKE** as redes de **1 camada** são as melhores e mais estáveis entre seeds, e as de 2 e 3 camadas ficam um pouco
-# **piores** (e mais instáveis, sobretudo com 64 e 128 neurônios): mais capacidade não ajuda, e sim aumenta a variância. Isso é coerente com a literatura: a previsão de volatilidade é dominada por **poucas features
-# lineares em log** (as `rv_*`) e o HAR linear é um baseline notoriamente forte; além disso há pouco dado **independente** (≈ 820 pregões de treino). A regra do **1 erro-padrão** escolhe a rede mais simples dentro
-# do ruído da melhor, que aqui é também a de menor QLIKE. Na comparação **Huber × MSE** (3 seeds) o resultado é um **empate técnico** (QLIKE de validação diferindo na 3ª casa, RMSE e MAE iguais até a 4ª): a regra
-# adotada (ficar com a Huber, mais robusta, **a menos que seja pior que a MSE por mais de 1 erro-padrão**) decide pela linha `DECISÃO` impressa acima, e vale registrar que a robustez da Huber **não** se traduziu em ganho
-# mensurável nesta amostra (o alvo já está em log, o que por si só suaviza os extremos).
+# **O que vemos na ablação.** Em RMSE a grade inteira é praticamente igual (≈ 0,129 em todas as células). No QLIKE, as redes de 1 camada são as melhores e mais estáveis entre seeds, e as de 2 e 3 camadas ficam um pouco piores (e mais instáveis, principalmente com 64 e 128 neurônios): mais capacidade não ajudou, e aumentou a variância. Isso faz sentido, porque a previsão de volatilidade é dominada por poucas features lineares em log (as `rv_*`), o HAR linear é um baseline forte e há pouco dado independente (≈ 820 pregões de treino). A regra do 1 erro-padrão escolhe a rede mais simples dentro do ruído da melhor, que aqui também é a de menor QLIKE.
+#
+# Na comparação Huber × MSE (3 seeds) deu praticamente empate (RMSE e MAE iguais até a 4ª casa, QLIKE diferindo na 3ª). A regra que definimos antes de ver o resultado (ficar com a Huber, que é mais robusta, a menos que ela seja pior que a MSE por mais de 1 erro-padrão) escolheu a MSE (linha `DECISÃO` acima): a Huber ficou ≈ 0,003 de QLIKE atrás, um pouco acima de 1 erro-padrão da MSE (≈ 0,0025). A robustez da Huber não deu ganho mensurável nesta amostra, talvez porque o alvo já está em log, o que suaviza os extremos. (Se uma nova execução inverter a decisão, vale reler a justificativa de compilação da seção 2.7.)
 
 # %% [markdown]
 # ## 2.7 Modelo final, camada a camada, e justificativas
@@ -399,21 +376,17 @@ print(f"DECISÃO: perda = {VOL_LOSS} (QLIKE de validação: Huber {_q.loc['huber
 # clone de inferência: … → Normalization(invert=True) → Activation("exponential")   [saída: volatilidade, fração a.a.]
 # ```
 #
+# A ablação escolheu 1 camada oculta com 32 neurônios.
+#
 # ### Justificativa: Arquitetura (Rede 2)
-# - **Ativação das ocultas: ReLU.** Entrada padronizada, camadas rasas e relações aproximadamente "lineares por partes" no log (a volatilidade futura cresce com a passada, com quebras em regimes extremos):
-#   a ReLU aprende isso sem saturar, é barata e converge rápido. `tanh`/`sigmoid` saturariam em caudas (dias de pânico) e atrasariam o treino.
-# - **Profundidade × largura:** a grade (heatmaps de QLIKE e RMSE, 3 seeds) mostrou que **mais capacidade não ajuda** (as redes de 1 camada foram as melhores em QLIKE); ficamos com a **menor rede dentro do erro-padrão da melhor** (impressa acima). Poucas camadas bastam porque
-#   o sinal é dominado por poucas features e há pouco dado **independente** (≈ 820 pregões de treino; as linhas de ações diferentes no mesmo dia são fortemente correlacionadas pelo mercado).
-# - **Saída: `Dense(1)` linear** (sem ativação) em cima do **alvo padronizado em log**: é uma regressão sem limite natural. A positividade vem de `exp(·)` no clone de inferência
-#   (`Normalization(invert=True)` desfaz a padronização e `Activation("exponential")` devolve a volatilidade em fração a.a.). Uma ReLU ou softplus na saída "cortaria" previsões e estragaria o gradiente.
+# - **Ativação da camada oculta: ReLU.** A entrada é padronizada, as camadas são rasas e a relação entre as features e a volatilidade futura é aproximadamente linear por partes no log (a volatilidade futura cresce com a passada, com quebras em regimes extremos). A ReLU aprende isso sem saturar, é barata e converge rápido. `tanh` e `sigmoid` saturariam nas caudas (dias de pânico) e atrasariam o treino.
+# - **Profundidade e largura:** a grade da seção 2.6 (3 seeds) mostrou que mais capacidade não ajuda (as redes de 1 camada foram as melhores no QLIKE). Ficamos com a menor rede dentro do erro-padrão da melhor, que é 1 camada oculta de 32 neurônios. Poucas camadas bastam porque o sinal vem de poucas features e há pouco dado independente (≈ 820 pregões de treino, e as ações de um mesmo dia andam juntas por causa do mercado).
+# - **Saída: `Dense(1)` linear**, sobre o alvo padronizado em log. É uma regressão sem limite natural, e a positividade vem do `exp(·)` no clone de inferência (`Normalization(invert=True)` desfaz a padronização e `Activation("exponential")` devolve a volatilidade em fração ao ano). Uma ReLU ou softplus na saída cortaria previsões e atrapalharia o gradiente.
 #
 # ### Justificativa: Compilação (Rede 2)
-# - **Loss: Huber ou MSE, conforme a linha `DECISÃO` da ablação** (os dois empataram na validação), sobre `ln y` padronizado. O log torna o erro **multiplicativo**; a Huber com `δ = 1,345·σ_res` (σ_res = desvio robusto dos resíduos do HAR, ver seção 2.5) é quadrática no miolo
-#   (eficiente) e linear nas caudas (robusta a eventos).
-# - **Taxa de aprendizado: Adam 1e-3 com `ReduceLROnPlateau` (fator 0,5, paciência 2).** 1e-3 é estável para MLPs com entrada padronizada; reduzir quando a validação estagna refina o mínimo sem escolher o ponto de parada à mão;
-#   o `EarlyStopping` (paciência 5, `restore_best_weights`) evita *overfitting*.
-# - **Métricas:** **RMSE e MAE em unidades naturais** (exigidos) e suas razões com a média do alvo (margem de erro relativa); **QLIKE** (padrão da área, penaliza mais subestimar risco) e **R² no log** como complementos.
-#   Durante o treino monitoramos a `mae` em unidades de `z` e a loss.
+# - **Loss: `mse`, sobre `ln y` padronizado.** Na ablação (seção 2.6, 3 seeds) comparamos duas candidatas: a Huber, com `δ = 1,345·σ_res` (seção 2.5), que é quadrática no miolo e linear nas caudas, e a MSE. As duas empataram em RMSE e MAE. No QLIKE de validação (nosso critério principal) a MSE ficou um pouco à frente (0,8036 contra 0,8064), e pela regra que fixamos antes (Huber, a menos que seja pior por mais de 1 erro-padrão) a escolha foi a MSE. O log já deixa o erro proporcional e achata as caudas, então a robustez extra da Huber não compensou. (A MSE em `ln y` estima a média de `ln y`, então a saída `exp(·)` é uma média geométrica, próxima da mediana, e não a média da volatilidade. Voltamos a esse limite na seção 4.7.)
+# - **Taxa de aprendizado: Adam 1e-3 com `ReduceLROnPlateau` (fator 0,5, paciência 2).** 1e-3 é estável para MLPs com entrada padronizada, e reduzir a taxa quando a validação estagna refina o mínimo sem precisar escolher o ponto de parada na mão. O `EarlyStopping` (paciência 5, `restore_best_weights`) evita overfitting.
+# - **Métricas:** RMSE e MAE em unidades naturais (exigidos) e as razões com a média do alvo (margem de erro relativa); QLIKE (padrão da área, penaliza mais subestimar o risco) e R² no log como complementos. Durante o treino acompanhamos a `mae` em unidades de `z` e a loss.
 
 # %%
 set_seed(SEED)
@@ -452,16 +425,12 @@ axes[1].legend()
 plt.show()
 
 # %% [markdown]
-# **Leitura.** A loss de validação é **maior** que a de treino (≈ 0,87 contra ≈ 0,68, em unidades de `z`), mas **não sobe** ao longo das épocas: a distância é grande e **constante**. Isso **não** é *overfitting* clássico
-# (que mostraria a validação piorando enquanto o treino melhora); é o **deslocamento de regime**: a validação (2016–2017) é mais calma e tem outro nível de volatilidade que o treino (a média de `z` na validação é
-# negativa, seção 2.3), e a rede, de 865 parâmetros, mal tem como decorar 400 mil linhas. A curva de validação para de melhorar em poucas épocas; o `EarlyStopping` restaura os melhores pesos (linha pontilhada)
-# e `ReduceLROnPlateau` corta a taxa quando estagna (painel da direita).
+# **O que vemos.** A loss de validação é maior que a de treino (≈ 0,87 contra ≈ 0,68, em unidades de `z`), mas não sobe ao longo das épocas: a distância é grande e constante. Isso não parece overfitting clássico (que mostraria a validação piorando enquanto o treino melhora). Parece o deslocamento de regime: a validação (2016–2017) é mais calma e tem outro nível de volatilidade que o treino (a média de `z` na validação é negativa, seção 2.3), e uma rede de 865 parâmetros mal consegue decorar 400 mil linhas. A validação para de melhorar em poucas épocas, o `EarlyStopping` restaura os melhores pesos (linha pontilhada) e o `ReduceLROnPlateau` corta a taxa quando estagna (painel da direita).
 
 # %% [markdown]
 # ## 2.8 Clone de inferência: de volta às unidades naturais
 #
-# O clone de inferência **compartilha os pesos** do modelo treinado e acrescenta `Normalization(invert=True)` (desfaz a padronização do alvo) e `Activation("exponential")`. A saída é a **volatilidade anualizada, em fração**.
-# É exatamente este caminho que a API serve.
+# O clone de inferência usa os mesmos pesos do modelo treinado e acrescenta `Normalization(invert=True)` (desfaz a padronização do alvo) e `Activation("exponential")`. A saída passa a ser a volatilidade anualizada, em fração.
 
 # %%
 v_denorm = layers.Normalization(axis=-1, mean=np.array([v_mu], dtype="float32"), variance=np.array([v_sigma**2], dtype="float32"), invert=True, name="target")
@@ -471,10 +440,9 @@ assert np.allclose(_chk, to_natural(vol_model.predict(vX_val[:1000], verbose=0))
 print("clone de inferência == exp(z·σ + μ):", "OK")
 
 # %% [markdown]
-# ## 2.9 Avaliação no teste (tocado uma única vez)
+# ## 2.9 Avaliação no teste (usado uma única vez)
 #
-# O modelo e os baselines são avaliados **uma vez** no teste (2017-05 → 2018-01, com o alvo das últimas amostras já olhando para o salto de fevereiro/2018). Reportamos as métricas exigidas (RMSE, MAE, MAE/média e RMSE/média,
-# **em unidades naturais**) e os extras (QLIKE, R² no log, viés).
+# Avaliamos o modelo e os baselines uma vez no teste (2017-05 a 2018-01, e o alvo das últimas amostras já olha para o salto de fevereiro/2018). Mostramos as métricas exigidas (RMSE, MAE, MAE/média e RMSE/média, em unidades naturais) e algumas extras (QLIKE, R² no log e viés).
 
 # %%
 yhat_mlp = vol_infer.predict(vX_test, batch_size=8192, verbose=0).reshape(-1).astype("float64")
@@ -486,12 +454,9 @@ mlp = vol_test_table.loc["MLP"]
 print(f"MLP: RMSE = {mlp['RMSE']:.4f} ({mlp['RMSE/média']:.1%} da média), MAE = {mlp['MAE']:.4f} ({mlp['MAE/média']:.1%} da média), QLIKE = {mlp['QLIKE']:.4f}, R² (log) = {mlp['R² (log)']:.3f}")
 
 # %% [markdown]
-# **Leitura.** `MAE/média` e `RMSE/média` dão a **margem de erro relativa** pedida: quanto o erro típico (MAE) e o erro "quadrático" (RMSE) pesam em relação à volatilidade média do teste (o erro típico é
-# da ordem de **40% da média**: prever a vol de 5 pregões de **uma** ação é difícil, o alvo é barulhento). A **persistência** (`rv_5`) é a pior em RMSE/MAE/QLIKE: a vol de 5 dias é uma estimativa barulhenta. O **HAR** é o rival
-# sério, e o MLP o supera por **margem pequena** (da ordem de 2% no RMSE e 3% no MAE, e R² no log maior); um teste de Diebold-Mariano por pregão, mais adiante, verifica se isso é distinguível do ruído. Há uma sutileza no **QLIKE**: a **média do treino** fica com o
-# menor QLIKE do teste, apesar de ter R² no log **negativo** (nenhum poder de ordenação). É um artefato do deslocamento de regime: o treino foi mais agitado, então a média do treino **superestima** o teste, e o QLIKE
-# **perdoa superestimar e pune subestimar**, ao passo que MLP e HAR **subestimam** (viés negativo, em parte por prever a **mediana** `exp(E[ln y])`, abaixo da média por desigualdade de Jensen, e em parte por não conhecer o choque
-# de 2018). Portanto o QLIKE do teste favorece aqui um modelo enviesado para cima; **não** o tomamos como prova de que a média "é melhor", e por isso lemos QLIKE, RMSE, MAE e R² no log em conjunto.
+# **O que vemos.** `MAE/média` e `RMSE/média` são a margem de erro relativa pedida: comparam o erro típico (MAE) e o erro quadrático (RMSE) com a volatilidade média do teste. O erro típico é da ordem de 40% da média, o que mostra que prever a volatilidade de 5 pregões de uma ação é difícil, porque o alvo tem muito ruído. A persistência (`rv_5`) é a pior em RMSE, MAE e QLIKE, já que a volatilidade de 5 dias é uma estimativa ruidosa. O HAR é o rival mais sério, e o MLP o supera por uma margem pequena (≈ 2% no RMSE e 3% no MAE, e R² no log maior). Mais abaixo, um teste estatístico por pregão verifica se essa diferença é maior que o ruído.
+#
+# Um detalhe no QLIKE: a média do treino tem o menor QLIKE do teste, apesar de ter R² no log negativo (ela não ordena nada). Isso vem do deslocamento de regime: o treino foi mais agitado, então a média do treino superestima o teste, e o QLIKE perdoa superestimar e pune subestimar. Já o MLP e o HAR subestimam (viés negativo, em parte porque preveem a mediana `exp(E[ln y])`, que fica abaixo da média, e em parte porque não conhecem o choque de 2018). Por isso o QLIKE do teste favorece aqui um modelo enviesado para cima, e não o tomamos como prova de que a média é melhor: lemos QLIKE, RMSE, MAE e R² no log em conjunto.
 
 # %%
 test_df = parts["test"][["date", "ticker", "y"]].copy()
@@ -526,10 +491,7 @@ axes[1].legend()
 plt.show()
 
 # %% [markdown]
-# **Leitura.** O RMSE **não piora de forma clara** em jan/2018 (varia de ≈ 0,09 a ≈ 0,17 entre os meses, com o pior em set/2017), mas o **viés** do MLP em jan/2018 é cerca de **3 vezes maior** que nos outros meses: o alvo das últimas
-# amostras de janeiro já olha para os pregões do salto de fevereiro, enquanto as features ainda mostram um mercado calmo. É um limite **estrutural** de qualquer previsor baseado no passado (e justifica o aviso do plano:
-# período curto, um único regime e um choque no teste). A curva real × prevista mostra que **MLP e HAR ficam quase planos** (≈ 0,16–0,19): acompanham o **nível** do mercado em 2017, mas **não** as ondas de curto prazo
-# (as altas de jul, set e nov) e só reagem ao choque de fevereiro nos últimos dias, e muito menos que o real. A diferença entre os dois modelos é pequena em todos os meses.
+# **O que vemos.** O RMSE não piora de forma clara em jan/2018 (varia de ≈ 0,09 a ≈ 0,17 entre os meses, com o pior em set/2017), mas o viés do MLP em jan/2018 é cerca de 3 vezes maior que nos outros meses: o alvo das últimas amostras de janeiro já olha para os pregões do salto de fevereiro, enquanto as features ainda mostram um mercado calmo. Nenhum previsor que use só o passado consegue evitar isso, e isso também mostra os limites do trabalho (período curto, um único regime e um choque no teste). A curva real × prevista mostra que o MLP e o HAR ficam quase planos (≈ 0,16–0,19): acompanham o nível do mercado em 2017, mas não as ondas de curto prazo (as altas de jul, set e nov), e só reagem ao choque de fevereiro nos últimos dias, e muito menos que o real. A diferença entre os dois modelos é pequena em todos os meses.
 
 # %%
 # A vantagem do MLP sobre o HAR é distinguível do ruído? Teste de Diebold-Mariano com a perda agregada por PREGÃO (ações no mesmo dia são fortemente
@@ -600,15 +562,12 @@ axes[2].set(xlabel="ln previsto", ylabel="resíduo", title="Resíduo × previsto
 plt.show()
 
 # %% [markdown]
-# **Leitura.** A nuvem previsto × real em log tem inclinação **menor** que a diagonal: as previsões ficam concentradas num intervalo estreito (ln previsto entre ≈ −2,6 e −1) enquanto o real vai de ≈ −4 a 1. É a assinatura de
-# um R² baixo (≈ 0,23): o modelo acerta o **nível esperado**, não os extremos, e por isso a dispersão vertical (o **ruído irredutível**: o alvo é a vol *realizada* de só 5 retornos, uma medida barulhenta da vol "verdadeira") domina.
-# Os resíduos em log são centrados perto de zero, com leve **cauda direita** (dias em que a volatilidade real foi muito maior que a prevista: eventos). O gráfico resíduo × previsto não mostra estrutura forte, então o modelo não está
-# sistematicamente errado em algum nível de volatilidade. O viés **negativo** em unidades naturais (≈ −0,02) vem da cauda direita, de prever a mediana e do choque de 2018.
+# **O que vemos.** A nuvem previsto × real em log tem inclinação menor que a diagonal: as previsões ficam num intervalo estreito (ln previsto entre ≈ −2,6 e −1) enquanto o real vai de ≈ −4 a 1. É o que se espera de um R² baixo (≈ 0,23): o modelo acerta o nível esperado, mas não os extremos, e a dispersão vertical (o ruído que não dá para reduzir, já que o alvo é a volatilidade realizada de só 5 retornos) domina. Os resíduos em log ficam centrados perto de zero, com uma leve cauda à direita (dias em que a volatilidade real foi bem maior que a prevista, por eventos). O gráfico resíduo × previsto não mostra estrutura forte, então o modelo não erra de forma sistemática em algum nível de volatilidade. O viés negativo em unidades naturais (≈ −0,02) vem da cauda à direita, de prever a mediana e do choque de 2018.
 
 # %% [markdown]
-# ## 2.10 Sanidade: e a **direção** (sobe/desce)? Quase aleatória
+# ## 2.10 Checagem: e a direção (sobe/desce)? Quase aleatória
 #
-# Para justificar o alvo, uma checagem curta: com as **mesmas 25 features**, uma regressão logística tenta prever se o retorno dos próximos 5 pregões é positivo.
+# Para justificar o alvo, fizemos uma checagem curta: com as mesmas 25 features, uma regressão logística tenta prever se o retorno dos próximos 5 pregões é positivo.
 
 # %%
 _fwd = np.log(sp["close"]).groupby(sp["ticker"], sort=False).shift(-HORIZON) - np.log(sp["close"])
@@ -620,10 +579,9 @@ print(f"direção em 5 pregões, teste: regressão logística = {acc_dir:.3%} | 
 print("-> a direção não é prevista de forma útil com essas features (o ganho é nulo ou ínfimo); a volatilidade, sim, é previsível.")
 
 # %% [markdown]
-# ## 2.11 Previsões em novas instâncias: os 5 últimos pregões (sem alvo ainda)
+# ## 2.11 Previsões em novas instâncias: os 5 últimos pregões (ainda sem alvo)
 #
-# Os **5 últimos pregões** do dataset (2018-02-01 a 2018-02-07) **ainda não têm alvo** (faltam os 5 dias futuros), então não pertencem ao teste (que termina em T−5): são previsões de verdade "fora da amostra".
-# Sorteamos **12 tickers** com seed fixa entre os que têm janela válida nos 5 dias.
+# Os 5 últimos pregões do dataset (2018-02-01 a 2018-02-07) ainda não têm alvo (faltam os 5 dias seguintes), então não fazem parte do teste, que termina 5 pregões antes. São previsões de verdade, fora da amostra. Sorteamos 12 tickers com seed fixa, entre os que têm janela válida nos 5 dias.
 
 # %%
 new_dates = new_instance_dates(sp["date"])
