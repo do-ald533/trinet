@@ -33,7 +33,7 @@ FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b98
 # Default base for both stages (Debian 13 "trixie", Python 3.13), pinned by digest. It is a named
 # stage so `BASE_IMAGE=slim` resolves to it without any registry round trip and so Dependabot
 # (docker ecosystem) keeps the digest fresh.
-FROM python:3.13-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS slim
+FROM python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS slim
 # - Drop pip: not needed at run time, and its vendored urllib3/msgpack copies only add scanner
 #   findings and attack surface. uv installs the project into its own venv and never needs pip.
 # - Apply Debian security updates published after the pinned digest (the pipeline must not block on
